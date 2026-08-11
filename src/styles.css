@@ -236,20 +236,23 @@ main {
   top: 0;
 }
 .command-search {
-  color: #9895a4;
+  color: #090000;
   display: flex;
   align-items: center;
-  gap: 9px;
-  font-size: 12px;
+  gap: 30px;
+  border-radius: 50px;
+  font-size: 15px;
+  background-color: #e5daff;
+  
 }
 .command-search kbd,
 .library-search kbd {
   font-family: 'DM Sans';
   font-size: 10px;
-  color: #aaa5b5;
+  color: #fdfcff;
   background: #f3f1f6;
   padding: 3px 5px;
-  border-radius: 4px;
+  border-radius: 20px;
   margin-left: 5px;
 }
 .header-actions {
