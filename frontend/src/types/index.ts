@@ -6,4 +6,5 @@ export type StudyTask = { id: string; title: string; subjectId: string; due: str
 export type Note = { id: string; title: string; subjectId: string; body: string; updatedAt: string; };
 export type Goal = { id: string; title: string; target: number; current: number; unit: string; };
 export type Activity = { id: string; label: string; time: string; category: 'study' | 'note' | 'task' | 'account'; };
-export type WorkspaceData = { subjects: Subject[]; tasks: StudyTask[]; notes: Note[]; goals: Goal[]; activity: Activity[]; dailyGoalMinutes: number; studiedTodayMinutes: number; language: 'en' | 'es'; };
+export type StudyDay = { date: string; minutes: number; };
+export type WorkspaceData = { subjects: Subject[]; tasks: StudyTask[]; notes: Note[]; goals: Goal[]; activity: Activity[]; studyHistory: StudyDay[]; dailyGoalMinutes: number; studiedTodayMinutes: number; language: 'en' | 'es'; };
