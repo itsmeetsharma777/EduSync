@@ -2894,13 +2894,13 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: (user: AuthUser) => 
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
                 placeholder={isAdminSetup ? 'admin@yourdomain.com' : 'you@example.com'}
-                required
+                required={!isReset}
               />
             </label>
             {!isForgot && <label>
               Password
               <input
-                autoComplete={isSignUp || isAdminSetup ? 'new-password' : 'current-password'}
+                autoComplete={isSignUp || isAdminSetup || isReset ? 'new-password' : 'current-password'}
                 type="password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
@@ -2963,9 +2963,13 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: (user: AuthUser) => 
                   ? 'Create my account'
                   : isAdminSetup
                     ? 'Create local admin'
-                    : portal === 'admin'
-                      ? 'Sign in to admin portal'
-                      : 'Sign in'}{' '}
+                    : isReset
+                    ? 'Reset password'
+                    : isForgot
+                      ? 'Send reset link'
+                      : portal === 'admin'
+                        ? 'Sign in to admin portal'
+                        : 'Sign in'}{' '}
               <ChevronRight size={17} />
             </button>
             </>
@@ -3005,6 +3009,14 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: (user: AuthUser) => 
 function App() {
   const [session, setSession] = useState<AuthUser | null>(() => readSession());
   const [checkingSession, setCheckingSession] = useState(apiConfigured);
+  useEffect(() => {
+    const verificationToken = new URLSearchParams(window.location.search).get('token');
+    if (!verificationToken || !apiConfigured) return;
+    verifyEmail(verificationToken)
+      .then((result) => toast.success(result.message))
+      .catch((error) => toast.error(error instanceof Error ? error.message : 'Email verification failed.'))
+      .finally(() => window.history.replaceState({}, '', window.location.pathname));
+  }, []);
   useEffect(() => {
     if (!apiConfigured) return;
     getCurrentUser().then((user) => {
