@@ -1027,7 +1027,7 @@ function NotesPage({
               }
             />
             <span>
-              <CheckCircle2 size={13} /> Auto-saved locally
+              <CheckCircle2 size={13} /> Auto-saved
             </span>
           </div>
           <div>
@@ -1417,7 +1417,7 @@ function LibraryPage({
           <Heart size={22} />
         </div>
         <h3>Save the sparks.</h3>
-        <p>Favorites and bookmarks persist locally. Import a backup from Settings any time.</p>
+        <p>Favorites and bookmarks sync with your EduSync account. Import a backup from Settings any time.</p>
       </section>
     </div>
   );
