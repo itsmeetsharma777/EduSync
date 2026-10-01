@@ -10,6 +10,7 @@ import { adminRoutes } from './routes/adminRoutes.js';
 import { aiRoutes } from './routes/aiRoutes.js';
 import { dashboardRoutes } from './routes/dashboardRoutes.js';
 import { subjectRoutes } from './routes/subjectRoutes.js';
+import { workspaceRoutes } from './routes/workspaceRoutes.js';
 
 export const app = express();
 app.use(helmet());
@@ -20,6 +21,7 @@ app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 240, standardHeaders: 'draft-
 app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'edusync-api' }));
 app.use('/api/auth', authRoutes);
 app.use('/api/subjects', subjectRoutes);
+app.use('/api/workspace', workspaceRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/ai', aiRoutes);
