@@ -14,7 +14,6 @@ const userSchema = new Schema(
     verificationExpiresAt: { type: Date, select: false },
     passwordResetTokenHash: { type: String, select: false },
     passwordResetExpiresAt: { type: Date, select: false },
-    googleId: { type: String, unique: true, sparse: true },
     sessions: [
       {
         id: { type: String, required: true },
