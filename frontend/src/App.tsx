@@ -984,7 +984,7 @@ function NewSubjectModal({ onClose, onCreate }: { onClose: () => void; onCreate:
       detail: detail.trim() || 'A focused learning space',
       short: name.trim().split(/\s+/).map((word) => word[0]).join('').slice(0, 3).toUpperCase(),
       color,
-      accent: 'lavender',
+      accent: color === '#0ea5a0' ? 'mint' : color === '#d97706' ? 'peach' : 'lavender',
       deadline,
       icon,
       pinned: false,
