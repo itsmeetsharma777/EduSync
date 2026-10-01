@@ -1094,41 +1094,9 @@ function VideoSummaryModal({
   );
   const [transcript, setTranscript] = useState('');
   const [loading, setLoading] = useState(false);
-  const [resetEmail, setResetEmail] = useState('');
-  const selectedLecture = lectures.find(({ subject, lecture }) => `${subject.id}:${lecture.id}` === selected);
+  const selectedLecture = lectures.find(({ subject, lecture }) => `${subject.id}:${subject.lectureId}` === selected);
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (mode === 'forgot') {
-      setLoading(true);
-      try {
-        const result = await requestPasswordReset(resetEmail);
-        toast.success(result.message);
-        setMode('sign-in');
-      } catch (error) {
-        toast.error(error instanceof Error ? error.message : 'Unable to request a password reset.');
-      } finally {
-        setLoading(false);
-      }
-      return;
-    }
-    if (mode === 'reset') {
-      if (strength < 5) return toast.error('Please meet every password requirement.');
-      if (password !== confirmPassword) return toast.error('Your passwords do not match.');
-      setLoading(true);
-      try {
-        const result = await resetPassword({ token: resetToken ?? '', password, confirmPassword });
-        toast.success(result.message);
-        window.history.replaceState({}, '', window.location.pathname);
-        setMode('sign-in');
-        setPassword('');
-        setConfirmPassword('');
-      } catch (error) {
-        toast.error(error instanceof Error ? error.message : 'Unable to reset your password.');
-      } finally {
-        setLoading(false);
-      }
-      return;
-    }
     if (!selectedLecture) return toast.error('Add a lecture before requesting a summary.');
     if (transcript.trim().length < 80)
       return toast.error('Paste at least a short transcript so the summary stays accurate.');
