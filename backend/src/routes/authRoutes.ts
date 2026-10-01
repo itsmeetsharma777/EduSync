@@ -4,8 +4,6 @@ import {
   requestPasswordReset,
   resetPassword,
   getMe,
-  googleCallback,
-  googleStart,
   listSessions,
   resendVerification,
   revokeSession,
@@ -28,5 +26,3 @@ authRoutes.get('/sessions', requireAuth, listSessions);
 authRoutes.delete('/sessions/:sessionId', requireAuth, revokeSession);
 authRoutes.post('/email/resend-verification', requireAuth, resendVerification);
 authRoutes.get('/verify-email', verifyEmail);
-authRoutes.get('/google', googleStart);
-authRoutes.get('/google/callback', googleCallback);
