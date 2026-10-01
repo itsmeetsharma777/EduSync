@@ -33,6 +33,9 @@ export const updateUser: RequestHandler = async (req, res) => {
       role: z.enum(['student', 'admin']).optional(),
     })
     .parse(req.body);
+  if (req.params.userId === req.auth!.sub && (input.isSuspended === true || input.role === 'student')) {
+    return res.status(400).json({ message: 'You cannot suspend or demote your own administrator account.' });
+  }
   const user = await User.findByIdAndUpdate(req.params.userId, input, { new: true }).select(
     'fullName email phone role isSuspended isEmailVerified',
   );
