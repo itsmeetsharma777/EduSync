@@ -136,6 +136,14 @@ function openLecture(url: string) {
   window.open(url, '_blank', 'noopener,noreferrer');
 }
 
+function normalizeWorkspace(workspace: WorkspaceData): WorkspaceData {
+  const today = new Date().toISOString().slice(0, 10);
+  const history = [...(workspace.studyHistory ?? [])];
+  if (!history.length && workspace.studiedTodayMinutes > 0) history.push({ date: today, minutes: workspace.studiedTodayMinutes });
+  const todayEntry = history.find((entry) => entry.date === today);
+  return { ...workspace, studyHistory: history.slice(-366), studiedTodayMinutes: todayEntry?.minutes ?? 0 };
+}
+
 const quotes = [
   'Progress becomes visible when you give your attention somewhere on purpose.',
   'You do not need a perfect day. You need one honest study block.',
@@ -1106,7 +1114,8 @@ function Workspace({ user, onLogout }: { user: AuthUser; onLogout: () => void })
     let cancelled = false;
     loadWorkspace().then((remote) => {
       if (cancelled) return;
-      if (remote) setData({ ...remote, studyHistory: remote.studyHistory ?? [] });
+      if (remote) setData(normalizeWorkspace(remote));
+      else setData((current) => normalizeWorkspace(current));
       setRemoteReady(true);
     }).catch(() => {
       if (!cancelled) { setSyncError(true); setRemoteReady(true); }
@@ -1149,7 +1158,8 @@ function Workspace({ user, onLogout }: { user: AuthUser; onLogout: () => void })
       const nextHistory = existing
         ? history.map((entry) => entry.date === today ? { ...entry, minutes: entry.minutes + minutes } : entry)
         : [...history, { date: today, minutes }];
-      return { ...current, studiedTodayMinutes: current.studiedTodayMinutes + minutes, studyHistory: nextHistory.slice(-366) };
+      const todayMinutes = nextHistory.find((entry) => entry.date === today)?.minutes ?? minutes;
+      return { ...current, studiedTodayMinutes: todayMinutes, studyHistory: nextHistory.slice(-366) };
     });
     addActivity(`Completed a ${minutes}-minute focus block`, 'study');
   };
