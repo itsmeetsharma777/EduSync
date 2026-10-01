@@ -1175,8 +1175,17 @@ function Workspace({ user, onLogout }: { user: AuthUser; onLogout: () => void })
     update((current) => ({ ...current, subjects: current.subjects.filter((subject) => subject.id !== id), tasks: current.tasks.filter((task) => task.subjectId !== id), notes: current.notes.filter((note) => note.subjectId !== id) }));
     if (name) addActivity(`Removed ${name}`, 'account');
   };
-  const updateLecture = (subjectId: string, lecture: Lecture) => update((current) => ({ ...current, subjects: current.subjects.map((subject) => subject.id === subjectId ? { ...subject, lectures: subject.lectures.map((item) => item.id === lecture.id ? lecture : item) } : subject) }));
-  const updateTask = (id: string) => update((current) => ({ ...current, tasks: current.tasks.map((task) => task.id === id ? { ...task, done: !task.done } : task) }));
+  const updateLecture = (subjectId: string, lecture: Lecture) => {
+    const previous = data.subjects.find((subject) => subject.id === subjectId)?.lectures.find((item) => item.id === lecture.id);
+    update((current) => ({ ...current, subjects: current.subjects.map((subject) => subject.id === subjectId ? { ...subject, lectures: subject.lectures.map((item) => item.id === lecture.id ? lecture : item) } : subject) }));
+    if (previous?.status !== 'completed' && lecture.status === 'completed') addActivity(`Completed lesson: ${lecture.title}`, 'study');
+  };
+  const updateTask = (id: string) => {
+    const task = data.tasks.find((item) => item.id === id);
+    if (!task) return;
+    update((current) => ({ ...current, tasks: current.tasks.map((item) => item.id === id ? { ...item, done: !item.done } : item) }));
+    addActivity(`${task.done ? 'Reopened' : 'Completed'} ${task.title}`, 'task');
+  };
   const createTask = (task: StudyTask) => { update((current) => ({ ...current, tasks: [...current.tasks, task] })); addActivity(`Added task ${task.title}`, 'task'); };
   const newNote = () => {
     const subjectId = data.subjects[0]?.id ?? '';
