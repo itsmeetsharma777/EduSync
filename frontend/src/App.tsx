@@ -100,6 +100,12 @@ import {
   YAxis,
 } from 'recharts';
 import { toast } from 'react-toastify';
+import { Avatar } from './components/common/Avatar';
+import { IconButton } from './components/common/IconButton';
+import { Progress } from './components/common/Progress';
+import { Header } from './components/layout/Header';
+import { Sidebar } from './components/layout/Sidebar';
+import type { View } from './types/navigation';
 import { downloadFile, makeId, useLocalStorage } from './utils/storage';
 import { loadWorkspace, persistWorkspace } from './services/api';
 import { seedWorkspace } from './data/seedWorkspace';
@@ -131,27 +137,7 @@ import {
   type AuthUser,
 } from './services/auth';
 
-type View =
-  | 'Dashboard'
-  | 'My subjects'
-  | 'Planner'
-  | 'Tasks'
-  | 'Notes'
-  | 'Analytics'
-  | 'Library'
-  | 'Settings'
-  | 'Admin';
 type ModalName = 'new-subject' | 'new-task' | 'subject' | null;
-
-const nav: { label: View; icon: typeof Home }[] = [
-  { label: 'Dashboard', icon: Home },
-  { label: 'My subjects', icon: Grid2X2 },
-  { label: 'Planner', icon: CalendarDays },
-  { label: 'Tasks', icon: ListChecks },
-  { label: 'Notes', icon: PenLine },
-  { label: 'Analytics', icon: LineChart },
-  { label: 'Library', icon: BookOpen },
-];
 
 const studyData = [
   { day: 'M', mins: 44 },
@@ -169,52 +155,6 @@ const quotePool = [
   'A focused hour changes more than a frantic day.',
 ];
 
-function Avatar({ className = '', name = 'Alex Morgan' }: { className?: string; name?: string }) {
-  const initials = name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((word) => word[0])
-    .join('')
-    .toUpperCase();
-  return (
-    <div className={`avatar ${className}`} aria-label={name}>
-      {initials || 'ES'}
-    </div>
-  );
-}
-function Progress({ value, color = 'var(--violet)' }: { value: number; color?: string }) {
-  return (
-    <div className="progress-track" aria-label={`${Math.round(value)}% complete`}>
-      <motion.div
-        className="progress-value"
-        initial={{ width: 0 }}
-        animate={{ width: `${Math.min(100, value)}%` }}
-        transition={{ duration: 0.6, ease: 'easeOut' }}
-        style={{ backgroundColor: color }}
-      />
-    </div>
-  );
-}
-function IconButton({
-  children,
-  label,
-  onClick,
-  className = '',
-  type = 'button',
-}: {
-  children: ReactNode;
-  label: string;
-  onClick?: () => void;
-  className?: string;
-  type?: 'button' | 'submit';
-}) {
-  return (
-    <button type={type} className={`icon-button ${className}`} aria-label={label} onClick={onClick}>
-      {children}
-    </button>
-  );
-}
 function formatDate(date?: string) {
   if (!date) return 'No deadline';
   const parsed = new Date(date);
@@ -245,132 +185,6 @@ function getThumbnail(url: string) {
 }
 function nextStatus(status: LectureStatus): LectureStatus {
   return status === 'not_started' ? 'in_progress' : status === 'in_progress' ? 'completed' : 'not_started';
-}
-
-function Sidebar({
-  active,
-  setActive,
-  collapsed,
-  onClose,
-  user,
-  onLogout,
-}: {
-  active: View;
-  setActive: (view: View) => void;
-  collapsed: boolean;
-  onClose: () => void;
-  user: AuthUser;
-  onLogout: () => void;
-}) {
-  const items = user.role === 'admin' ? [...nav, { label: 'Admin' as View, icon: ShieldCheck }] : nav;
-  return (
-    <aside className={`sidebar ${collapsed ? 'sidebar-open' : ''}`} aria-label="Primary navigation">
-      <div className="brand">
-        <div className="brand-mark">
-          <GraduationCap size={22} />
-        </div>
-        <span>EduSync</span>
-        <button className="mobile-close" aria-label="Close navigation" onClick={onClose}>
-          <X size={20} />
-        </button>
-      </div>
-      <div className="workspace-label">{user.role === 'admin' ? 'ADMINISTRATION' : 'WORKSPACE'}</div>
-      <nav>
-        {items.map(({ label, icon: Icon }) => (
-          <button
-            key={label}
-            className={`nav-item ${active === label ? 'active' : ''}`}
-            onClick={() => {
-              setActive(label);
-              onClose();
-            }}
-          >
-            <Icon size={18} />
-            <span>{label}</span>
-            {label === 'Tasks' && <i className="nav-dot" />}
-          </button>
-        ))}
-      </nav>
-      <div className="sidebar-spacer" />
-      <div className="upgrade-card">
-        <Crown size={18} />
-        <p>
-          <strong>{user.role === 'admin' ? 'Admin control' : 'Go Pro'}</strong>
-          <br />
-          {user.role === 'admin' ? 'Manage accounts securely.' : 'Unlock AI and cloud sync.'}
-        </p>
-        <button
-          onClick={() =>
-            user.role === 'admin'
-              ? setActive('Admin')
-              : toast.info('Cloud integrations are ready to connect when you add provider keys.')
-          }
-        >
-          {user.role === 'admin' ? 'Open admin' : 'Explore Pro'}
-        </button>
-      </div>
-      <div className="profile-menu">
-        <Avatar name={user.fullName} />
-        <div>
-          <strong>{user.fullName}</strong>
-          <span>
-            {user.role === 'admin'
-              ? 'Administrator'
-              : user.isEmailVerified
-                ? 'Verified student'
-                : 'Verify your email'}
-          </span>
-        </div>
-        <IconButton label="Sign out" onClick={onLogout}>
-          <X size={17} />
-        </IconButton>
-      </div>
-    </aside>
-  );
-}
-
-function Header({
-  onMenu,
-  dark,
-  toggleDark,
-  openCommand,
-  setActive,
-  user,
-}: {
-  onMenu: () => void;
-  dark: boolean;
-  toggleDark: () => void;
-  openCommand: () => void;
-  setActive: (view: View) => void;
-  user: AuthUser;
-}) {
-  return (
-    <header className="topbar">
-      <button className="mobile-menu" aria-label="Open navigation" onClick={onMenu}>
-        <Menu size={22} />
-      </button>
-      <button className="command-search" onClick={openCommand} aria-label="Open command palette">
-        <Search size={18} />
-        <span>Search or jump to a page</span>
-        <kbd>⌘ K</kbd>
-      </button>
-      <div className="header-actions">
-        <IconButton label="Open settings" onClick={() => setActive('Settings')}>
-          <Settings size={19} />
-        </IconButton>
-        <IconButton label="Toggle theme" onClick={toggleDark}>
-          {dark ? <Sun size={19} /> : <Moon size={19} />}
-        </IconButton>
-        <div className="notification-wrap">
-          <IconButton label="Notifications" onClick={() => toast('You’re all caught up!')}>
-            <Bell size={19} />
-          </IconButton>
-          <span />
-        </div>
-        <Avatar className="top-avatar" name={user.fullName} />
-      </div>
-    </header>
-  );
 }
 
 function SubjectCard({
