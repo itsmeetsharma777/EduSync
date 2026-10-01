@@ -690,6 +690,8 @@ function NotesPage({
 }
 
 function AnalyticsPage({ data }: { data: WorkspaceData }) {
+  const weeklyFocus = getStudyWeek(data.studyHistory ?? []);
+  const streak = studyStreak(data.studyHistory ?? []);
   const completed = data.subjects.reduce((sum, subject) => sum + subject.lectures.filter((lecture) => lecture.status === 'completed').length, 0);
   const total = data.subjects.reduce((sum, subject) => sum + subject.lectures.length, 0);
   const focusMix = data.subjects.map((subject, index) => ({
@@ -1081,7 +1083,7 @@ class ErrorBoundaryImpl extends Component<{ children: ReactNode }, { hasError: b
 }
 
 function Workspace({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
-  const blankWorkspace: WorkspaceData = { ...seedWorkspace, subjects: [], tasks: [], notes: [], goals: [], activity: [], studiedTodayMinutes: 0 };
+  const blankWorkspace: WorkspaceData = { ...seedWorkspace, subjects: [], tasks: [], notes: [], goals: [], activity: [], studyHistory: [], studiedTodayMinutes: 0 };
   const [data, setData] = useLocalStorage<WorkspaceData>(`edusync-workspace-v4-${user.id}`, user.role === 'admin' ? seedWorkspace : blankWorkspace);
   const [remoteReady, setRemoteReady] = useState(false);
   const [syncing, setSyncing] = useState(false);
