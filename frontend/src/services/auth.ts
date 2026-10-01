@@ -82,11 +82,6 @@ export async function loadAdminStats() {
   return request<{ users: number; activeUsers: number; subjects: number }>('/admin/stats');
 }
 
-export async function loadAdminStats() {
-  if (!apiRoot) return null;
-  return request<{ users: number; activeUsers: number; subjects: number }>('/admin/stats');
-}
-
 export async function listManagedUsers() {
   if (apiRoot) return (await request<{ users: AuthUser[] }>('/admin/users')).users;
   return localUsers();
