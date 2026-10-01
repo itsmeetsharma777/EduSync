@@ -1,4 +1,4 @@
-import type { WorkspaceData } from './types';
+import type { WorkspaceData } from '../types';
 
 export const seedWorkspace: WorkspaceData = {
   subjects: [
