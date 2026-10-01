@@ -2,6 +2,7 @@ import type { RequestHandler } from 'express';
 import { z } from 'zod';
 import { Subject } from '../models/Subject.js';
 import { User } from '../models/User.js';
+import { Workspace } from '../models/Workspace.js';
 
 export const listUsers: RequestHandler = async (_req, res) => {
   const users = await User.find()
@@ -36,13 +37,15 @@ export const updateUser: RequestHandler = async (req, res) => {
     'fullName email phone role isSuspended isEmailVerified',
   );
   if (!user) return res.status(404).json({ message: 'User not found.' });
-  return res.json({ user });
+  return res.json({ user: { id: user._id.toString(), fullName: user.fullName, email: user.email, phone: user.phone ?? '', role: user.role, isSuspended: user.isSuspended, isEmailVerified: user.isEmailVerified } });
 };
 
 export const deleteUser: RequestHandler = async (req, res) => {
+  if (req.params.userId === req.auth!.sub) return res.status(400).json({ message: 'You cannot delete your own administrator account.' });
   await Promise.all([
     User.findByIdAndDelete(req.params.userId),
     Subject.deleteMany({ owner: req.params.userId }),
+    Workspace.deleteOne({ owner: req.params.userId }),
   ]);
   return res.status(204).end();
 };
