@@ -95,3 +95,34 @@ export async function deleteManagedUser(id: string) {
   if (apiRoot) { await request(`/admin/users/${id}`, { method: 'DELETE' }); return; }
   writeAccounts(readAccounts().filter((account) => account.id !== id));
 }
+
+
+export async function getCurrentUser() {
+  if (!apiRoot) return readSession();
+  try {
+    const payload = await request<{ user: AuthUser }>('/auth/me');
+    saveSession(payload.user);
+    return payload.user;
+  } catch {
+    clearSession();
+    return null;
+  }
+}
+
+export type SessionInfo = {
+  id: string;
+  device: string;
+  createdAt: string;
+  lastActiveAt: string;
+  current: boolean;
+};
+
+export async function listSessions() {
+  if (!apiRoot) return [];
+  return (await request<{ sessions: SessionInfo[] }>('/auth/sessions')).sessions;
+}
+
+export async function revokeSession(id: string) {
+  if (!apiRoot) return;
+  await request(`/auth/sessions/${id}`, { method: 'DELETE' });
+}
