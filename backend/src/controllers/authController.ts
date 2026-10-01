@@ -184,7 +184,7 @@ export const resetPassword: RequestHandler = async (req, res) => {
   user.passwordHash = await bcrypt.hash(input.password, 12);
   user.passwordResetTokenHash = undefined;
   user.passwordResetExpiresAt = undefined;
-  user.sessions = [];
+  user.sessions.splice(0, user.sessions.length);
   await user.save();
   return res.json({ message: 'Password reset successfully. Please sign in again.' });
 };
