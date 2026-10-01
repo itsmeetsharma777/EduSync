@@ -67,6 +67,7 @@ function cookieOptions() {
 
 async function createSession(user: UserDocument, req: Request, res: Response) {
   const sessionId = crypto.randomUUID();
+  user.sessions = user.sessions.filter((session) => session.id !== sessionId).slice(-9);
   user.sessions.push({
     id: sessionId,
     userAgent: req.get('user-agent')?.slice(0, 200) ?? 'Unknown device',
