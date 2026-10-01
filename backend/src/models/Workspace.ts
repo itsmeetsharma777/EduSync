@@ -70,6 +70,13 @@ const workspaceSchema = new Schema({
   notes: { type: [noteSchema], default: [] },
   goals: { type: [goalSchema], default: [] },
   activity: { type: [activitySchema], default: [] },
+  studyHistory: {
+    type: [{
+      date: { type: String, required: true },
+      minutes: { type: Number, required: true, min: 0, max: 100000 },
+    }],
+    default: [],
+  },
 }, { timestamps: true });
 
 export const Workspace = model('Workspace', workspaceSchema);
