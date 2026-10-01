@@ -1,4 +1,4 @@
-function Avatar({ className = '', name = 'Alex Morgan' }: { className?: string; name?: string }) {
+export function Avatar({ className = '', name = 'Alex Morgan' }: { className?: string; name?: string }) {
   const initials = name
     .split(/\s+/)
     .filter(Boolean)
