@@ -94,6 +94,7 @@ import {
   deleteManagedUser,
   getCurrentUser,
   listManagedUsers,
+  loadAdminStats,
   listSessions,
   readSession,
   requestPasswordReset,
@@ -859,7 +860,7 @@ function AdminPage() {
   useEffect(() => {
     Promise.all([
       listManagedUsers(),
-      apiConfigured ? fetch(`${import.meta.env.VITE_API_URL.replace(/\/$/, '')}/api/admin/stats`, { credentials: 'include' }).then((response) => response.json()).then((payload) => ({ users: payload.users, activeUsers: payload.activeUsers, subjects: payload.subjects })) : Promise.resolve(null),
+      loadAdminStats(),
     ]).then(([managedUsers, platform]) => { setUsers(managedUsers); setStats(platform); }).catch((error) => toast.error(error instanceof Error ? error.message : 'Unable to load admin data.')).finally(() => setLoading(false));
   }, []);
   const updateUser = async (user: AuthUser, update: Partial<AuthUser>) => {
