@@ -1,7 +1,10 @@
 import {
   Component,
   type FormEvent,
-  type ReactNode,\n  type CSSProperties,\n  type Dispatch,\n  type SetStateAction,
+  type ReactNode,
+  type CSSProperties,
+  type Dispatch,
+  type SetStateAction,
   useEffect,
   useMemo,
   useRef,
