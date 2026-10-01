@@ -4,7 +4,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
 import { env } from '../config/env.js';
-import { User } from '../models/User.js';
+import { User, type UserDocument } from '../models/User.js';
 
 type Role = 'student' | 'admin';
 
@@ -65,7 +65,7 @@ function cookieOptions() {
   };
 }
 
-async function createSession(user: any, req: Request, res: Response) {
+async function createSession(user: UserDocument, req: Request, res: Response) {
   const sessionId = crypto.randomUUID();
   user.sessions.push({
     id: sessionId,
@@ -82,7 +82,7 @@ async function createSession(user: any, req: Request, res: Response) {
   return presentUser(user);
 }
 
-async function sendVerificationEmail(user: any, rawToken: string) {
+async function sendVerificationEmail(user: UserDocument, rawToken: string) {
   if (!env.resendApiKey || !env.emailFrom) return false;
   const verifyUrl = `${env.clientOrigin}/verify-email?token=${rawToken}`;
   const response = await fetch('https://api.resend.com/emails', {
@@ -98,7 +98,7 @@ async function sendVerificationEmail(user: any, rawToken: string) {
   return response.ok;
 }
 
-async function createVerificationToken(user: any) {
+async function createVerificationToken(user: UserDocument) {
   const rawToken = crypto.randomBytes(32).toString('hex');
   user.verificationTokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
   user.verificationExpiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24);
@@ -144,7 +144,7 @@ const forgotPasswordSchema = z.object({ email: z.string().email() });
 const resetPasswordSchema = z.object({ token: z.string().min(1), password: passwordSchema, confirmPassword: z.string() })
   .refine((input) => input.password === input.confirmPassword, { message: 'Passwords do not match.', path: ['confirmPassword'] });
 
-async function sendPasswordResetEmail(user: any, rawToken: string) {
+async function sendPasswordResetEmail(user: UserDocument, rawToken: string) {
   if (!env.resendApiKey || !env.emailFrom) return false;
   const resetUrl = `${env.clientOrigin}/?resetToken=${rawToken}`;
   const response = await fetch('https://api.resend.com/emails', {
@@ -195,7 +195,7 @@ export const adminSignIn: RequestHandler = async (req, res) => loginWithPassword
 export const getMe: RequestHandler = async (req, res) => {
   const user = await User.findById(req.auth!.sub);
   if (!user || user.isSuspended) return res.status(401).json({ message: 'Session is no longer valid.' });
-  const session = user.sessions.find((item: any) => item.id === req.auth!.sid);
+  const session = user.sessions.find((item) => item.id === req.auth!.sid);
   if (!session) return res.status(401).json({ message: 'Session has expired.' });
   session.lastActiveAt = new Date();
   await user.save();
@@ -211,7 +211,7 @@ export const signOut: RequestHandler = async (req, res) => {
 export const listSessions: RequestHandler = async (req, res) => {
   const user = await User.findById(req.auth!.sub).select('sessions');
   return res.json({
-    sessions: (user?.sessions ?? []).map((session: any) => ({
+    sessions: (user?.sessions ?? []).map((session) => ({
       id: session.id,
       device: session.userAgent,
       createdAt: session.createdAt,
@@ -253,75 +253,4 @@ export const verifyEmail: RequestHandler = async (req, res) => {
   user.verificationExpiresAt = undefined;
   await user.save();
   return res.json({ message: 'Email verified. You can now continue to EduSync.' });
-};
-
-export const googleStart: RequestHandler = (_req, res) => {
-  if (!env.googleClientId || !env.googleClientSecret || !env.googleCallbackUrl)
-    return res.status(503).json({ message: 'Google sign-in is not configured on this deployment.' });
-  const state = crypto.randomBytes(20).toString('hex');
-  res.cookie('edusync_google_state', state, { ...cookieOptions(), maxAge: 1000 * 60 * 10 });
-  const url = new URL('https://accounts.google.com/o/oauth2/v2/auth');
-  url.search = new URLSearchParams({
-    client_id: env.googleClientId,
-    redirect_uri: env.googleCallbackUrl,
-    response_type: 'code',
-    scope: 'openid email profile',
-    state,
-    access_type: 'offline',
-    prompt: 'select_account',
-  }).toString();
-  return res.redirect(url.toString());
-};
-
-export const googleCallback: RequestHandler = async (req, res) => {
-  if (
-    !env.googleClientId ||
-    !env.googleClientSecret ||
-    !env.googleCallbackUrl ||
-    req.query.state !== req.cookies.edusync_google_state ||
-    typeof req.query.code !== 'string'
-  )
-    return res.redirect(`${env.clientOrigin}/?auth=google_failed`);
-  const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      code: req.query.code,
-      client_id: env.googleClientId,
-      client_secret: env.googleClientSecret,
-      redirect_uri: env.googleCallbackUrl,
-      grant_type: 'authorization_code',
-    }),
-  });
-  if (!tokenResponse.ok) return res.redirect(`${env.clientOrigin}/?auth=google_failed`);
-  const tokens = (await tokenResponse.json()) as { access_token?: string };
-  if (!tokens.access_token) return res.redirect(`${env.clientOrigin}/?auth=google_failed`);
-  const profileResponse = await fetch('https://openidconnect.googleapis.com/v1/userinfo', {
-    headers: { Authorization: `Bearer ${tokens.access_token}` },
-  });
-  if (!profileResponse.ok) return res.redirect(`${env.clientOrigin}/?auth=google_failed`);
-  const profile = (await profileResponse.json()) as {
-    sub: string;
-    email: string;
-    name?: string;
-    picture?: string;
-  };
-  let user = await User.findOne({ $or: [{ googleId: profile.sub }, { email: profile.email.toLowerCase() }] });
-  if (!user)
-    user = await User.create({
-      fullName: profile.name ?? profile.email.split('@')[0],
-      email: profile.email.toLowerCase(),
-      googleId: profile.sub,
-      avatarUrl: profile.picture,
-      isEmailVerified: true,
-    });
-  else {
-    user.googleId = profile.sub;
-    user.avatarUrl = profile.picture ?? user.avatarUrl;
-    user.isEmailVerified = true;
-  }
-  if (user.isSuspended) return res.redirect(`${env.clientOrigin}/?auth=suspended`);
-  await createSession(user, req, res);
-  res.clearCookie('edusync_google_state', cookieOptions());
-  return res.redirect(`${env.clientOrigin}/?auth=google_success`);
 };
