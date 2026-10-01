@@ -1,40 +1,56 @@
 # EduSync
 
-A polished learning-management workspace for intentional study. The starter includes a responsive React experience and a secure Express/MongoDB API foundation.
+EduSync is a student learning workspace with authentication, subjects and lectures, planner/tasks, notes, analytics, library, focus mode, admin controls, and AI lecture summaries.
 
-## Included
+## Project structure
 
-- Premium student dashboard with subjects, planner, analytics, library, dark mode, keyboard-friendly UI, Pomodoro timer, and AI study companion.
-- Recharts analytics and production code splitting for the chart, animation, and icon libraries.
-- Express API with Helmet, CORS, rate limiting, JWT authentication, bcrypt password hashing, Zod validation, MongoDB/Mongoose models, and owner-scoped subject/lecture routes.
+- `frontend/` — React + TypeScript + Vite application.
+- `backend/` — Express + TypeScript + MongoDB/Mongoose API.
 
-## Run locally
+## Development
+
+Install dependencies:
 
 ```bash
 npm install
-npm run dev
 ```
 
-The frontend runs on Vite. For the API, create a `.env` from `.env.example`, set a MongoDB connection string and a strong JWT secret, then run:
+Run the frontend:
 
 ```bash
-npm run server:dev
+npm run frontend:dev
 ```
 
-## Checks
+Run the backend:
+
+```bash
+npm run backend:dev
+```
+
+Build both applications:
 
 ```bash
 npm run build
-npm run server:build
 ```
 
-## API surface
+Create a root `.env` from `.env.example` for MongoDB, JWT, CORS, optional Google OAuth, email verification, and AI configuration. Set `VITE_API_URL` in the frontend environment to the backend base URL.
 
-| Method         | Route                               | Description                                     |
-| -------------- | ----------------------------------- | ----------------------------------------------- |
-| `GET`          | `/health`                           | API health probe                                |
-| `POST`         | `/api/auth/sign-up`                 | Create a student account                        |
-| `POST`         | `/api/auth/sign-in`                 | Receive a JWT                                   |
-| `GET` / `POST` | `/api/subjects`                     | List or create the signed-in user’s subjects    |
-| `POST`         | `/api/subjects/:subjectId/lectures` | Add a YouTube lecture with a thumbnail fallback |
-| `GET`          | `/api/dashboard`                    | Return user learning metrics                    |
+## Backend API
+
+`/health`
+
+`/api/auth/*` — sign up, sign in, sessions, verification, Google OAuth.
+
+`/api/subjects/*` — authenticated subject and lecture operations.
+
+`/api/workspace` — authenticated persistent tasks, notes, goals, activity, language, and study-time state.
+
+`/api/dashboard` — authenticated dashboard metrics.
+
+`/api/admin/*` — protected administrator account management and platform statistics.
+
+`/api/ai/lectures/summary` — authenticated AI lecture summarization.
+
+## Important
+
+The production application should use the backend as the source of truth. The frontend keeps its existing local cache for responsiveness, while authenticated workspace changes are synchronized to MongoDB through `/api/workspace`.
