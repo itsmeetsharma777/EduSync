@@ -57,6 +57,10 @@ const workspaceSchema = z.object({
     current: z.number().min(0),
     unit: z.string().trim().min(1).max(30),
   })).max(100),
+  studyHistory: z.array(z.object({
+    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    minutes: z.number().int().min(0).max(100000),
+  })).max(366),
   activity: z.array(z.object({
     id: z.string().min(1).max(100),
     label: z.string().trim().min(1).max(240),
