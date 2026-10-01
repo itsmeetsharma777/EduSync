@@ -831,7 +831,7 @@ function SettingsPage({
       <Card className="danger-zone">
         <div className="settings-heading"><ShieldAlert size={19} /><div><h3>Account safety</h3><p>Sign out other devices from the security section above. Workspace backups remain under your control.</p></div></div>
         <div className="danger-zone-note"><strong>Need to start fresh?</strong><span>Export a backup before removing local workspace data.</span></div>
-        <button className="button button-secondary" onClick={() => { if (window.confirm('Clear this browser’s cached workspace? Your cloud workspace will remain available when you sign in again.')) { localStorage.removeItem(`edusync-workspace-v3-${user.id}`); toast.success('Local cache cleared.'); window.location.reload(); } }}>Clear local cache</button>
+        <button className="button button-secondary" onClick={() => { if (window.confirm('Clear this browser’s cached workspace? Your cloud workspace will remain available when you sign in again.')) { localStorage.removeItem(`edusync-workspace-v4-${user.id}`); toast.success('Local cache cleared.'); window.location.reload(); } }}>Clear local cache</button>
       </Card>
       <FeedbackForm />
     </div>
