@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 
-function IconButton({
+export function IconButton({
   children,
   label,
   onClick,
