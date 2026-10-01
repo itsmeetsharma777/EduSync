@@ -47,7 +47,7 @@ export async function createAccount(input: { fullName: string; email: string; ph
 }
 
 export async function signIn(input: { email: string; password: string; portal: AuthRole }) {
-  if (apiRoot) {
+  if (apiBase) {
     const endpoint = input.portal === 'admin' ? '/auth/admin/sign-in' : '/auth/sign-in';
     const payload = await request<{ user: AuthUser }>(endpoint, { method: 'POST', body: JSON.stringify({ email: input.email, password: input.password }) });
     saveSession(payload.user); return payload.user;
@@ -60,7 +60,7 @@ export async function signIn(input: { email: string; password: string; portal: A
 }
 
 export async function signOut() {
-  if (apiRoot) await request('/auth/sign-out', { method: 'POST' }).catch(() => undefined);
+  if (apiBase) await request('/auth/sign-out', { method: 'POST' }).catch(() => undefined);
   clearSession();
 }
 export async function summarizeLecture(input: { title: string; transcript: string; courseContext?: string }) {
@@ -84,17 +84,17 @@ export async function loadAdminStats() {
 }
 
 export async function listManagedUsers() {
-  if (apiRoot) return (await request<{ users: AuthUser[] }>('/admin/users')).users;
+  if (apiBase) return (await request<{ users: AuthUser[] }>('/admin/users')).users;
   return localUsers();
 }
 export async function updateManagedUser(id: string, update: Partial<Pick<AuthUser, 'fullName' | 'phone' | 'role' | 'isSuspended'>>) {
-  if (apiRoot) return (await request<{ user: AuthUser }>(`/admin/users/${id}`, { method: 'PATCH', body: JSON.stringify(update) })).user;
+  if (apiBase) return (await request<{ user: AuthUser }>(`/admin/users/${id}`, { method: 'PATCH', body: JSON.stringify(update) })).user;
   const current = localUsers().find((user) => user.id === id);
   if (!current) throw new Error('User not found.');
   const updated = { ...current, ...update }; updateLocalUser(updated); return updated;
 }
 export async function deleteManagedUser(id: string) {
-  if (apiRoot) { await request(`/admin/users/${id}`, { method: 'DELETE' }); return; }
+  if (apiBase) { await request(`/admin/users/${id}`, { method: 'DELETE' }); return; }
   writeAccounts(readAccounts().filter((account) => account.id !== id));
 }
 
@@ -134,10 +134,10 @@ export async function requestPasswordReset(email: string) {
   return request<{ message: string }>('/auth/password/forgot', { method: 'POST', body: JSON.stringify({ email }) });
 }
 export async function resetPassword(input: { token: string; password: string; confirmPassword: string }) {
-  if (!apiRoot) throw new Error('Password reset needs the backend API configured.');
+  if (!apiBase) throw new Error('Password reset needs the backend API configured.');
   return request<{ message: string }>('/auth/password/reset', { method: 'POST', body: JSON.stringify(input) });
 }
 export async function verifyEmail(token: string) {
-  if (!apiRoot) throw new Error('Email verification needs the backend API configured.');
+  if (!apiBase) throw new Error('Email verification needs the backend API configured.');
   return request<{ message: string }>(`/auth/verify-email?token=${encodeURIComponent(token)}`);
 }
