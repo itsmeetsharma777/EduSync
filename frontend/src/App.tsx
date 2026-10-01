@@ -516,7 +516,7 @@ function SubjectsPage({
           const progress = subjectProgress(subject);
           return (
             <motion.article key={subject.id} className="subject-card-new" layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
-              <div className={`subject-banner ${subject.accent}`}>
+              <div className={`subject-banner ${subject.accent}`} style={{ borderTopColor: subject.color }}>
                 <span>{subject.icon}</span>
                 <div>
                   <small>{subject.short}</small>
