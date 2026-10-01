@@ -1,3 +1,6 @@
+const dateOnly = (offset: number) => { const date = new Date(); date.setHours(12, 0, 0, 0); date.setDate(date.getDate() + offset); return date.toISOString().slice(0, 10); };
+const dateTime = (offset: number, hour: number) => { const date = new Date(); date.setHours(hour, 0, 0, 0); date.setDate(date.getDate() + offset); return date.toISOString().slice(0, 16); };
+
 import type { WorkspaceData } from '../types';
 
 export const seedWorkspace: WorkspaceData = {
@@ -9,7 +12,7 @@ export const seedWorkspace: WorkspaceData = {
       short: 'DS',
       color: '#B896FF',
       accent: 'lavender',
-      deadline: '2026-10-26',
+      deadline: dateOnly(25),
       icon: '✦',
       pinned: true,
       lectures: [
@@ -58,7 +61,7 @@ export const seedWorkspace: WorkspaceData = {
       short: 'ML',
       color: '#F7C879',
       accent: 'peach',
-      deadline: '2026-11-08',
+      deadline: dateOnly(38),
       icon: '⌁',
       pinned: false,
       lectures: [
@@ -95,7 +98,7 @@ export const seedWorkspace: WorkspaceData = {
       short: 'SE',
       color: '#73D4C1',
       accent: 'mint',
-      deadline: '2026-12-01',
+      deadline: dateOnly(61),
       icon: '◌',
       pinned: false,
       lectures: [
@@ -131,7 +134,7 @@ export const seedWorkspace: WorkspaceData = {
       id: 'task-1',
       title: 'Finish card-state exercise',
       subjectId: 'design',
-      due: '2026-10-24T09:00',
+      due: dateTime(-1, 9),
       kind: 'assignment',
       priority: 'high',
       done: true,
@@ -140,7 +143,7 @@ export const seedWorkspace: WorkspaceData = {
       id: 'task-2',
       title: 'Design systems checkpoint',
       subjectId: 'design',
-      due: '2026-10-26T11:00',
+      due: dateTime(3, 11),
       kind: 'exam',
       priority: 'high',
       done: false,
@@ -149,7 +152,7 @@ export const seedWorkspace: WorkspaceData = {
       id: 'task-3',
       title: 'Gradient descent retrieval practice',
       subjectId: 'ml',
-      due: '2026-10-24T14:00',
+      due: dateTime(1, 14),
       kind: 'revision',
       priority: 'medium',
       done: false,
@@ -158,7 +161,7 @@ export const seedWorkspace: WorkspaceData = {
       id: 'task-4',
       title: 'Verb practice',
       subjectId: 'spanish',
-      due: '2026-10-24T18:30',
+      due: dateTime(2, 18),
       kind: 'revision',
       priority: 'low',
       done: false,
@@ -169,20 +172,29 @@ export const seedWorkspace: WorkspaceData = {
       id: 'note-1',
       title: 'Typography systems',
       subjectId: 'design',
-      updatedAt: '2026-10-24T09:15:00',
+      updatedAt: dateTime(0, 9),
       body: '# Typography systems\n\nA useful scale makes the interface feel intentional.\n\n## Remember\n\n- Use **one** clear hierarchy\n- Let spacing do some of the work\n- Test at small sizes\n\n> Good typography is quiet confidence.',
     },
     {
       id: 'note-2',
       title: 'Gradient descent intuition',
       subjectId: 'ml',
-      updatedAt: '2026-10-22T16:15:00',
+      updatedAt: dateTime(-2, 16),
       body: '# Gradient descent\n\nMove in the direction that reduces loss. Start with a learning rate that is small enough to be stable.',
     },
   ],
   goals: [
     { id: 'goal-1', title: 'Focused minutes this week', target: 480, current: 390, unit: 'min' },
     { id: 'goal-2', title: 'Complete design system', target: 18, current: 13, unit: 'lessons' },
+  ],
+  studyHistory: [
+    { date: dateOnly(-6), minutes: 38 },
+    { date: dateOnly(-5), minutes: 64 },
+    { date: dateOnly(-4), minutes: 48 },
+    { date: dateOnly(-3), minutes: 82 },
+    { date: dateOnly(-2), minutes: 56 },
+    { date: dateOnly(-1), minutes: 96 },
+    { date: dateOnly(0), minutes: 45 },
   ],
   activity: [
     { id: 'a-1', label: 'Completed “Components that scale”', time: 'Today, 09:20', category: 'study' },
