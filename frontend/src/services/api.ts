@@ -15,3 +15,7 @@ export async function loadWorkspace() {
 export async function persistWorkspace(data: WorkspaceData) {
   await request('/api/workspace', { method: 'PUT', body: JSON.stringify(data) });
 }
+
+export async function submitFeedback(message: string) {
+  await request('/api/feedback', { method: 'POST', body: JSON.stringify({ message }) });
+}
