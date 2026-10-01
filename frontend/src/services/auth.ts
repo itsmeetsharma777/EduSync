@@ -126,3 +126,16 @@ export async function revokeSession(id: string) {
   if (!apiRoot) return;
   await request(`/auth/sessions/${id}`, { method: 'DELETE' });
 }
+
+export async function requestPasswordReset(email: string) {
+  if (!apiRoot) throw new Error('Password reset needs the backend API configured.');
+  return request<{ message: string }>('/auth/password/forgot', { method: 'POST', body: JSON.stringify({ email }) });
+}
+export async function resetPassword(input: { token: string; password: string; confirmPassword: string }) {
+  if (!apiRoot) throw new Error('Password reset needs the backend API configured.');
+  return request<{ message: string }>('/auth/password/reset', { method: 'POST', body: JSON.stringify(input) });
+}
+export async function verifyEmail(token: string) {
+  if (!apiRoot) throw new Error('Email verification needs the backend API configured.');
+  return request<{ message: string }>(`/auth/verify-email?token=${encodeURIComponent(token)}`);
+}
