@@ -127,6 +127,9 @@ import {
   createDemoAdmin,
   deleteManagedUser,
   googleSignIn,
+  getCurrentUser,
+  listSessions,
+  revokeSession,
   listManagedUsers,
   readSession,
   saveSession,
@@ -1419,21 +1422,23 @@ function LibraryPage({
 
 function SettingsPage({
   data,
+  authUser,
   setData,
   onImport,
   onExport,
 }: {
   data: WorkspaceData;
+  authUser: AuthUser;
   setData: (data: WorkspaceData) => void;
   onImport: (file: File) => void;
   onExport: () => void;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [summary, setSummary] = useLocalStorage('edusync-email-summary', true);
-  const [sessions, setSessions] = useLocalStorage('edusync-sessions', [
-    { id: 'current', device: 'This browser', location: 'India', current: true },
-    { id: 'old-mobile', device: 'iPhone · Safari', location: 'India', current: false },
-  ]);
+  const [sessions, setSessions] = useState<Array<{ id: string; device: string; createdAt: string; lastActiveAt: string; current: boolean }>>([]);
+  useEffect(() => {
+    listSessions().then(setSessions).catch(() => undefined);
+  }, [authUser.id]);
   return (
     <div className="page simple-page">
       <div className="page-title">
@@ -1531,12 +1536,10 @@ function SettingsPage({
             <UserRound size={17} />
             <div>
               <strong>{session.device}</strong>
-              <span>
-                {session.location} {session.current && '· Current session'}
-              </span>
+              <span>{session.current ? 'Current session' : `Last active ${formatDate(session.lastActiveAt)}`}</span>
             </div>
             {!session.current && (
-              <button onClick={() => setSessions(sessions.filter((item) => item.id !== session.id))}>
+              <button onClick={async () => { try { await revokeSession(session.id); setSessions((current) => current.filter((item) => item.id !== session.id)); toast.success('Session signed out.'); } catch (error) { toast.error(error instanceof Error ? error.message : 'Unable to sign out that session.'); } }}>
                 Sign out
               </button>
             )}
@@ -2607,7 +2610,7 @@ function Workspace({ authUser, onLogout }: { authUser: AuthUser; onLogout: () =>
         ),
         Analytics: <AnalyticsPage data={data} />,
         Library: <LibraryPage data={data} updateLecture={updateLecture} />,
-        Settings: <SettingsPage data={data} setData={setData} onExport={exportData} onImport={importData} />,
+        Settings: <SettingsPage authUser={authUser} data={data} setData={setData} onExport={exportData} onImport={importData} />,
         Admin:
           authUser.role === 'admin' ? (
             <AdminPage data={data} />
@@ -2973,6 +2976,15 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: (user: AuthUser) => 
 
 function App() {
   const [session, setSession] = useState<AuthUser | null>(() => readSession());
+  const [checkingSession, setCheckingSession] = useState(apiConfigured);
+  useEffect(() => {
+    if (!apiConfigured) return;
+    getCurrentUser().then((user) => {
+      setSession(user);
+      setCheckingSession(false);
+    });
+  }, []);
+  if (checkingSession) return <main className="auth-page"><div className="auth-form-wrap"><h2>Loading EduSync…</h2><p>Restoring your secure session.</p></div></main>;
   const logout = async () => {
     await signOut();
     clearSession();
