@@ -107,7 +107,7 @@ import { Header } from './components/layout/Header';
 import { Sidebar } from './components/layout/Sidebar';
 import type { View } from './types/navigation';
 import { downloadFile, makeId, useLocalStorage } from './utils/storage';
-import { loadWorkspace, persistWorkspace } from './services/api';
+import { loadWorkspace, persistWorkspace, submitFeedback } from './services/api';
 import { seedWorkspace } from './data/seedWorkspace';
 import type {
   Activity,
@@ -1579,8 +1579,17 @@ function FeedbackForm() {
         onSubmit={(event) => {
           event.preventDefault();
           if (!message.trim()) return;
-          toast.success('Thanks — your feedback is saved for the project team.');
-          setMessage('');
+          if (!apiConfigured) {
+            toast.error('Connect the backend API before sending feedback.');
+            return;
+          }
+          try {
+            await submitFeedback(message.trim());
+            toast.success('Thanks — your feedback was submitted.');
+            setMessage('');
+          } catch (error) {
+            toast.error(error instanceof Error ? error.message : 'Unable to send feedback.');
+          }
         }}
       >
         <input
