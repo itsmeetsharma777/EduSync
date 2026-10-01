@@ -854,8 +854,14 @@ function FeedbackForm() {
 
 function AdminPage() {
   const [users, setUsers] = useState<AuthUser[]>([]);
+  const [stats, setStats] = useState<{ users: number; activeUsers: number; subjects: number } | null>(null);
   const [loading, setLoading] = useState(true);
-  useEffect(() => { listManagedUsers().then(setUsers).catch((error) => toast.error(error instanceof Error ? error.message : 'Unable to load users.')).finally(() => setLoading(false)); }, []);
+  useEffect(() => {
+    Promise.all([
+      listManagedUsers(),
+      apiConfigured ? fetch(`${import.meta.env.VITE_API_URL.replace(/\/$/, '')}/api/admin/stats`, { credentials: 'include' }).then((response) => response.json()).then((payload) => ({ users: payload.users, activeUsers: payload.activeUsers, subjects: payload.subjects })) : Promise.resolve(null),
+    ]).then(([managedUsers, platform]) => { setUsers(managedUsers); setStats(platform); }).catch((error) => toast.error(error instanceof Error ? error.message : 'Unable to load admin data.')).finally(() => setLoading(false));
+  }, []);
   const updateUser = async (user: AuthUser, update: Partial<AuthUser>) => {
     try {
       const updated = await updateManagedUser(user.id, update);
@@ -872,8 +878,8 @@ function AdminPage() {
     <div className="page">
       <PageHeader eyebrow="ADMINISTRATION" title="Platform control" text="Manage student accounts and access from the protected administrator area." />
       <div className="metric-grid">
-        <MetricCard icon={<UserRound size={18} />} label="Accounts" value={String(users.length)} hint={loading ? 'Loading…' : `${users.filter((user) => !user.isSuspended).length} active`} />
-        <MetricCard icon={<ShieldCheck size={18} />} label="API" value={apiConfigured ? 'Connected' : 'Preview'} hint="Environment status" />
+        <MetricCard icon={<UserRound size={18} />} label="Accounts" value={String(stats?.users ?? users.length)} hint={loading ? 'Loading…' : `${stats?.activeUsers ?? users.filter((user) => !user.isSuspended).length} active`} />
+        <MetricCard icon={<BookOpen size={18} />} label="Learning spaces" value={String(stats?.subjects ?? '—')} hint="Across the platform" />
       </div>
       <Card className="admin-users-card">
         <div className="card-heading"><div><span className="eyebrow">USER MANAGEMENT</span><h3>Accounts</h3></div><Search size={18} /></div>
