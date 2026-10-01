@@ -1,7 +1,7 @@
 import {
   Component,
   type FormEvent,
-  type ReactNode,
+  type ReactNode,\n  type CSSProperties,\n  type Dispatch,\n  type SetStateAction,
   useEffect,
   useMemo,
   useRef,
@@ -324,7 +324,7 @@ function Dashboard({
       <section className="today-grid">
         <Card className="today-card">
           <div className="today-progress">
-            <div className="progress-ring-large" style={{ '--progress': `${progress * 3.6}deg` } as React.CSSProperties}>
+            <div className="progress-ring-large" style={{ '--progress': `${progress * 3.6}deg` } as CSSProperties}>
               <div>
                 <strong>{progress}%</strong>
                 <span>today</span>
@@ -753,7 +753,7 @@ function SettingsPage({
   onImport,
 }: {
   data: WorkspaceData;
-  setData: React.Dispatch<React.SetStateAction<WorkspaceData>>;
+  setData: Dispatch<SetStateAction<WorkspaceData>>;
   user: AuthUser;
   onExport: () => void;
   onImport: (file: File) => void;
