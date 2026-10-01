@@ -132,6 +132,9 @@ import {
   revokeSession,
   listManagedUsers,
   readSession,
+  requestPasswordReset,
+  resetPassword,
+  verifyEmail,
   saveSession,
   signIn,
   signOut,
@@ -1091,9 +1094,41 @@ function VideoSummaryModal({
   );
   const [transcript, setTranscript] = useState('');
   const [loading, setLoading] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
   const selectedLecture = lectures.find(({ subject, lecture }) => `${subject.id}:${lecture.id}` === selected);
   const submit = async (event: FormEvent) => {
     event.preventDefault();
+    if (mode === 'forgot') {
+      setLoading(true);
+      try {
+        const result = await requestPasswordReset(resetEmail);
+        toast.success(result.message);
+        setMode('sign-in');
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : 'Unable to request a password reset.');
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+    if (mode === 'reset') {
+      if (strength < 5) return toast.error('Please meet every password requirement.');
+      if (password !== confirmPassword) return toast.error('Your passwords do not match.');
+      setLoading(true);
+      try {
+        const result = await resetPassword({ token: resetToken ?? '', password, confirmPassword });
+        toast.success(result.message);
+        window.history.replaceState({}, '', window.location.pathname);
+        setMode('sign-in');
+        setPassword('');
+        setConfirmPassword('');
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : 'Unable to reset your password.');
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
     if (!selectedLecture) return toast.error('Add a lecture before requesting a summary.');
     if (transcript.trim().length < 80)
       return toast.error('Paste at least a short transcript so the summary stays accurate.');
@@ -2696,7 +2731,8 @@ function passwordChecks(password: string) {
 }
 
 function AuthScreen({ onAuthenticated }: { onAuthenticated: (user: AuthUser) => void }) {
-  const [mode, setMode] = useState<'sign-in' | 'sign-up' | 'admin-setup'>('sign-in');
+  const resetToken = new URLSearchParams(window.location.search).get('resetToken');
+  const [mode, setMode] = useState<'sign-in' | 'sign-up' | 'admin-setup' | 'forgot' | 'reset'>(resetToken ? 'reset' : 'sign-in');
   const [portal, setPortal] = useState<'student' | 'admin'>('student');
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
@@ -2753,6 +2789,8 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: (user: AuthUser) => 
   };
   const isSignUp = mode === 'sign-up';
   const isAdminSetup = mode === 'admin-setup';
+  const isForgot = mode === 'forgot';
+  const isReset = mode === 'reset';
   return (
     <main className="auth-page">
       <section className="auth-brand-panel">
@@ -2785,7 +2823,7 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: (user: AuthUser) => 
       <section className="auth-form-panel">
         <div className="auth-topline">
           <span>
-            {portal === 'admin' ? 'ADMINISTRATOR PORTAL' : isSignUp ? 'CREATE YOUR ACCOUNT' : 'WELCOME BACK'}
+            {isForgot ? 'PASSWORD RECOVERY' : isReset ? 'RESET YOUR PASSWORD' : portal === 'admin' ? 'ADMINISTRATOR PORTAL' : isSignUp ? 'CREATE YOUR ACCOUNT' : 'WELCOME BACK'}
           </span>
           <button
             onClick={() => {
@@ -2799,36 +2837,24 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: (user: AuthUser) => 
         <div className="auth-form-wrap">
           <div className="auth-heading">
             <h2>
-              {isAdminSetup
-                ? 'Set up local admin'
-                : isSignUp
-                  ? 'Start learning with intention.'
-                  : portal === 'admin'
-                    ? 'Manage EduSync securely.'
-                    : 'Welcome back.'}
+              {isForgot ? 'Recover your account.' : isReset ? 'Choose a new password.' : isAdminSetup ? 'Set up local admin' : isSignUp ? 'Start learning with intention.' : portal === 'admin' ? 'Manage EduSync securely.' : 'Welcome back.'}
             </h2>
             <p>
-              {isAdminSetup
-                ? 'This only exists in browser-only preview. Deployments create the admin from server environment variables.'
-                : isSignUp
-                  ? 'Your learning space starts with a thoughtful setup.'
-                  : portal === 'admin'
-                    ? 'Use your separate administrator credentials.'
-                    : 'Sign in to continue your learning journey.'}
+              {isForgot ? 'Enter your email and we will send a secure reset link if the account exists.' : isReset ? 'Your reset link is time-limited for security.' : isAdminSetup ? 'This only exists in browser-only preview. Deployments create the admin from server environment variables.' : isSignUp ? 'Your learning space starts with a thoughtful setup.' : portal === 'admin' ? 'Use your separate administrator credentials.' : 'Sign in to continue your learning journey.'}
             </p>
           </div>
-          {!isSignUp && !isAdminSetup && portal === 'student' && (
+          {!isSignUp && !isAdminSetup && !isForgot && !isReset && portal === 'student' && (
             <button className="google-button" onClick={useGoogle}>
               <span className="google-g">G</span> Continue with Google
             </button>
           )}
-          {!isSignUp && !isAdminSetup && portal === 'student' && (
+          {!isSignUp && !isAdminSetup && !isForgot && !isReset && portal === 'student' && (
             <div className="auth-divider">
               <span>or continue with email</span>
             </div>
           )}
           <form className="auth-form" onSubmit={submit}>
-            {(isSignUp || isAdminSetup) && !isAdminSetup && (
+            {(isSignUp || isAdminSetup) && !isAdminSetup && !isForgot && !isReset && (
               <label>
                 Full name
                 <input
@@ -2840,7 +2866,7 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: (user: AuthUser) => 
                 />
               </label>
             )}
-            {isSignUp && (
+            {isSignUp && !isReset && (
               <label>
                 Phone number
                 <input
@@ -2853,6 +2879,13 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: (user: AuthUser) => 
                 />
               </label>
             )}
+            {isForgot ? (
+              <label>
+                Email address
+                <input type="email" value={resetEmail} onChange={(event) => setResetEmail(event.target.value)} placeholder="you@example.com" required />
+              </label>
+            ) : (
+            <>
             <label>
               Email address
               <input
@@ -2864,7 +2897,7 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: (user: AuthUser) => 
                 required
               />
             </label>
-            <label>
+            {!isForgot && <label>
               Password
               <input
                 autoComplete={isSignUp || isAdminSetup ? 'new-password' : 'current-password'}
@@ -2874,8 +2907,8 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: (user: AuthUser) => 
                 placeholder="••••••••"
                 required
               />
-            </label>
-            {(isSignUp || isAdminSetup) && (
+            </label>}
+            {(isSignUp || isAdminSetup || isReset) && (
               <>
                 <div className="password-meter">
                   <div>
@@ -2897,7 +2930,7 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: (user: AuthUser) => 
                 </ul>
               </>
             )}
-            {isSignUp && (
+            {(isSignUp || isReset) && (
               <label>
                 Confirm password
                 <input
@@ -2920,16 +2953,8 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: (user: AuthUser) => 
                 <span>I agree to the Terms of Service and Privacy Policy.</span>
               </label>
             )}
-            {!isSignUp && !isAdminSetup && (
-              <button
-                type="button"
-                className="forgot-link"
-                onClick={() =>
-                  toast.info('Password reset is available once the email provider is configured on the API.')
-                }
-              >
-                Forgot password?
-              </button>
+            {!isSignUp && !isAdminSetup && !isForgot && !isReset && (
+              <button type="button" className="forgot-link" onClick={() => setMode('forgot')}>Forgot password?</button>
             )}
             <button className="auth-submit" disabled={loading}>
               {loading
@@ -2943,8 +2968,10 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: (user: AuthUser) => 
                       : 'Sign in'}{' '}
               <ChevronRight size={17} />
             </button>
+            </>
+            )}
           </form>
-          {!isAdminSetup && (
+          {!isAdminSetup && !isForgot && !isReset && (
             <p className="auth-switch">
               {isSignUp ? 'Already have an account?' : 'New to EduSync?'}{' '}
               <button
@@ -2957,11 +2984,12 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: (user: AuthUser) => 
               </button>
             </p>
           )}
-          {!apiConfigured && portal === 'admin' && !isAdminSetup && (
+          {!apiConfigured && portal === 'admin' && !isAdminSetup && !isForgot && !isReset && (
             <button className="demo-admin-link" onClick={() => setMode('admin-setup')}>
               Set up a local administrator for preview
             </button>
           )}
+          {(isForgot || isReset) && <p className="auth-switch"><button onClick={() => { setMode('sign-in'); window.history.replaceState({}, '', window.location.pathname); }}>Back to sign in</button></p>}
           {!apiConfigured && (
             <p className="deployment-note">
               <ShieldCheck size={14} /> Browser preview mode. Add <code>VITE_API_URL</code> and server secrets
