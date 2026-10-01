@@ -12,6 +12,8 @@ const userSchema = new Schema(
     isEmailVerified: { type: Boolean, default: false },
     verificationTokenHash: { type: String, select: false },
     verificationExpiresAt: { type: Date, select: false },
+    passwordResetTokenHash: { type: String, select: false },
+    passwordResetExpiresAt: { type: Date, select: false },
     googleId: { type: String, unique: true, sparse: true },
     sessions: [
       {
