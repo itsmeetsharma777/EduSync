@@ -62,10 +62,6 @@ export async function signOut() {
   if (apiRoot) await request('/auth/sign-out', { method: 'POST' }).catch(() => undefined);
   clearSession();
 }
-export function googleSignIn() {
-  if (!apiRoot) throw new Error('Google sign-in needs the API URL and Google OAuth variables configured.');
-  window.location.assign(`${apiRoot}/auth/google`);
-}
 export async function summarizeLecture(input: { title: string; transcript: string; courseContext?: string }) {
   if (!apiRoot) throw new Error('Video summaries need the API URL and an OPENAI_API_KEY configured on the server.');
   return request<{ summary: string }>('/ai/lectures/summary', { method: 'POST', body: JSON.stringify(input) });
