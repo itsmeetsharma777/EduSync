@@ -615,3 +615,8 @@ a { color: inherit; }
   .timer-widget { grid-template-columns: 1fr; text-align: center; justify-items: center; }
   .timer-copy .button { margin: 0 auto; }
 }
+
+
+/* Keyboard accessibility */
+:where(button, a, input, textarea, select):focus-visible { outline: 3px solid color-mix(in srgb, var(--accent) 65%, transparent); outline-offset: 2px; }
+button:disabled { cursor: not-allowed; opacity: .55; }
