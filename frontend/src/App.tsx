@@ -713,7 +713,7 @@ function AnalyticsPage({ data }: { data: WorkspaceData }) {
       <div className="metric-grid">
         <MetricCard icon={<Timer size={18} />} label="Today" value={`${data.studiedTodayMinutes} min`} hint={`${data.dailyGoalMinutes} min daily target`} />
         <MetricCard icon={<CheckCircle2 size={18} />} label="Completed" value={String(completed)} hint={`${total} lessons tracked`} />
-        <MetricCard icon={<Flame size={18} />} label="Streak" value="7 days" hint="Current consistency" />
+        <MetricCard icon={<Flame size={18} />} label="Streak" value={`${streak} ${streak === 1 ? 'day' : 'days'}`} hint={streak ? 'Current consistency' : 'Study today to start'} />
         <MetricCard icon={<Target size={18} />} label="Goals" value={String(data.goals.length)} hint="Active learning goals" />
       </div>
       <div className="analytics-grid-new">
