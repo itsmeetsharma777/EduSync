@@ -805,7 +805,7 @@ function SettingsPage({
       <PageHeader eyebrow="YOUR WORKSPACE" title="Settings" text="Personalize EduSync and keep control of your account and data." />
       <div className="settings-grid-new">
         <Card>
-          <div className="settings-heading"><Languages size={19} /><div><h3>Language</h3><p>Choose the workspace language.</p></div></div>
+          <div className="settings-heading"><Languages size={19} /><div><h3>Language preference</h3><p>Choose your preferred language for future localized study content.</p></div></div>
           <div className="segmented">{(['en', 'es'] as const).map((language) => <button key={language} className={data.language === language ? 'selected' : ''} onClick={() => setData({ ...data, language })}>{language === 'en' ? 'English' : 'Español'}</button>)}</div>
         </Card>
         <Card>
@@ -813,7 +813,7 @@ function SettingsPage({
           <div className="button-row"><button className="button button-secondary" onClick={onExport}><Download size={15} /> Export</button><button className="button button-secondary" onClick={() => fileRef.current?.click()}><Upload size={15} /> Import</button><input ref={fileRef} type="file" accept="application/json" hidden onChange={(event) => event.target.files?.[0] && onImport(event.target.files[0])} /></div>
         </Card>
         <Card>
-          <div className="settings-heading"><Inbox size={19} /><div><h3>Weekly summary preference</h3><p>Save your preference for a future email integration.</p></div></div>
+          <div className="settings-heading"><Inbox size={19} /><div><h3>Weekly review reminder</h3><p>Keep a local reminder preference for your weekly reflection.</p></div></div>
           <label className="switch-row"><input type="checkbox" checked={summary} onChange={(event) => setSummary(event.target.checked)} /><span /> Weekly progress summary</label>
         </Card>
         <Card>
@@ -826,6 +826,11 @@ function SettingsPage({
         {sessions.length ? sessions.map((session) => (
           <div className="session-row" key={session.id}><UserRound size={17} /><div><strong>{session.device}</strong><span>{session.current ? 'Current session' : `Last active ${formatDate(session.lastActiveAt)}`}</span></div>{!session.current && <button className="button button-secondary" onClick={async () => { try { await revokeSession(session.id); setSessions((current) => current.filter((item) => item.id !== session.id)); toast.success('Session signed out.'); } catch (error) { toast.error(error instanceof Error ? error.message : 'Unable to sign out.'); } }}>Sign out</button>}</div>
         )) : <p className="muted-copy">Session management is available when the backend API is connected.</p>}
+      </Card>
+      <Card className="danger-zone">
+        <div className="settings-heading"><ShieldAlert size={19} /><div><h3>Account safety</h3><p>Sign out other devices from the security section above. Workspace backups remain under your control.</p></div></div>
+        <div className="danger-zone-note"><strong>Need to start fresh?</strong><span>Export a backup before removing local workspace data.</span></div>
+        <button className="button button-secondary" onClick={() => { if (window.confirm('Clear this browser’s cached workspace? Your cloud workspace will remain available when you sign in again.')) { localStorage.removeItem(`edusync-workspace-v3-${user.id}`); toast.success('Local cache cleared.'); window.location.reload(); } }}>Clear local cache</button>
       </Card>
       <FeedbackForm />
     </div>
