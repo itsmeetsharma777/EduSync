@@ -1094,7 +1094,7 @@ function VideoSummaryModal({
   );
   const [transcript, setTranscript] = useState('');
   const [loading, setLoading] = useState(false);
-  const selectedLecture = lectures.find(({ subject, lecture }) => `${subject.id}:${subject.lectureId}` === selected);
+  const selectedLecture = lectures.find(({ subject, lecture }) => `${subject.id}:${lecture.id}` === selected);
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (!selectedLecture) return toast.error('Add a lecture before requesting a summary.');
