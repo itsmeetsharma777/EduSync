@@ -2281,7 +2281,7 @@ function Assistant({ open, onClose, data }: { open: boolean; onClose: () => void
     </AnimatePresence>
   );
 }
-function FocusOverlay({ exit }: { exit: () => void }) {
+function FocusOverlay({ exit, onFinish }: { exit: () => void; onFinish: (minutes: number) => void }) {
   return (
     <div className="focus-overlay">
       <button onClick={exit}>
@@ -2296,7 +2296,7 @@ function FocusOverlay({ exit }: { exit: () => void }) {
           your full attention.
         </h1>
         <p>25 minutes · Design systems</p>
-        <FocusTimer onFinish={() => undefined} />
+        <FocusTimer onFinish={onFinish} />
       </div>
     </div>
   );
@@ -2420,6 +2420,13 @@ function Workspace({ authUser, onLogout }: { authUser: AuthUser; onLogout: () =>
         12,
       ),
     }));
+  const addMinutes = (minutes: number) => {
+    setData((current) => ({
+      ...current,
+      studiedTodayMinutes: current.studiedTodayMinutes + minutes,
+    }));
+    log(`Completed a ${minutes}-minute focus session`, 'study');
+  };
   const updateSubject = (subject: Subject) => {
     setData((current) => ({
       ...current,
@@ -2560,13 +2567,7 @@ function Workspace({ authUser, onLogout }: { authUser: AuthUser; onLogout: () =>
             setActive={setActive}
             openSubject={openSubject}
             openNewSubject={() => setModal('new-subject')}
-            addMinutes={(minutes) => {
-              setData((current) => ({
-                ...current,
-                studiedTodayMinutes: current.studiedTodayMinutes + minutes,
-              }));
-              log(`Completed a ${minutes}-minute focus session`, 'study');
-            }}
+            addMinutes={addMinutes}
             setFocusMode={setFocusMode}
           />
         ),
@@ -2633,7 +2634,7 @@ function Workspace({ authUser, onLogout }: { authUser: AuthUser; onLogout: () =>
               setActive={setActive}
               openSubject={openSubject}
               openNewSubject={() => setModal('new-subject')}
-              addMinutes={() => undefined}
+              addMinutes={addMinutes}
               setFocusMode={setFocusMode}
             />
           ),
@@ -2691,7 +2692,7 @@ function Workspace({ authUser, onLogout }: { authUser: AuthUser; onLogout: () =>
             />
           )}
         </AnimatePresence>
-        {focusMode && <FocusOverlay exit={() => setFocusMode(false)} />}
+        {focusMode && <FocusOverlay exit={() => setFocusMode(false)} onFinish={addMinutes} />}
       </div>
     </ErrorBoundary>
   );
