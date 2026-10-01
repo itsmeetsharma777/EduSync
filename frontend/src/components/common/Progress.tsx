@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 
-function Progress({ value, color = 'var(--violet)' }: { value: number; color?: string }) {
+export function Progress({ value, color = 'var(--violet)' }: { value: number; color?: string }) {
   return (
     <div className="progress-track" aria-label={`${Math.round(value)}% complete`}>
       <motion.div
