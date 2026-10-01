@@ -1576,7 +1576,7 @@ function FeedbackForm() {
       </div>
       <p>Tell us what would make your study space more useful.</p>
       <form
-        onSubmit={(event) => {
+        onSubmit={async (event) => {
           event.preventDefault();
           if (!message.trim()) return;
           if (!apiConfigured) {
