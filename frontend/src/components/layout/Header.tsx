@@ -5,7 +5,7 @@ import { IconButton } from '../common/IconButton';
 import type { View } from '../../types/navigation';
 import type { AuthUser } from '../../services/auth';
 
-function Header({
+export function Header({
   onMenu,
   dark,
   toggleDark,
