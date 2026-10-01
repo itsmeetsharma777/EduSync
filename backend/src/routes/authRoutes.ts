@@ -13,13 +13,16 @@ import {
   verifyEmail,
 } from '../controllers/authController.js';
 import { requireAuth } from '../middleware/auth.js';
+import rateLimit from 'express-rate-limit';
+
+const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 40, standardHeaders: 'draft-8', legacyHeaders: false });
 
 export const authRoutes = Router();
-authRoutes.post('/sign-up', signUp);
-authRoutes.post('/sign-in', signIn);
-authRoutes.post('/admin/sign-in', adminSignIn);
-authRoutes.post('/password/forgot', requestPasswordReset);
-authRoutes.post('/password/reset', resetPassword);
+authRoutes.post('/sign-up', authLimiter, signUp);
+authRoutes.post('/sign-in', authLimiter, signIn);
+authRoutes.post('/admin/sign-in', authLimiter, adminSignIn);
+authRoutes.post('/password/forgot', authLimiter, requestPasswordReset);
+authRoutes.post('/password/reset', authLimiter, resetPassword);
 authRoutes.get('/me', requireAuth, getMe);
 authRoutes.post('/sign-out', requireAuth, signOut);
 authRoutes.get('/sessions', requireAuth, listSessions);
