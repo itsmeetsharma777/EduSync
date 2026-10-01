@@ -2709,11 +2709,45 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: (user: AuthUser) => 
   const [confirmPassword, setConfirmPassword] = useState('');
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
   const checks = passwordChecks(password);
   const strength = checks.filter(([, pass]) => pass).length;
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
+    if (mode === 'forgot') {
+      if (!resetEmail) return toast.error('Enter your email address.');
+      setLoading(true);
+      try {
+        const result = await requestPasswordReset(resetEmail);
+        toast.success(result.message);
+        setMode('sign-in');
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : 'Unable to request a password reset.');
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+    if (mode === 'reset') {
+      if (!resetToken) return toast.error('This reset link is missing its token.');
+      if (strength < 5) return toast.error('Please meet every password requirement.');
+      if (password !== confirmPassword) return toast.error('Your passwords do not match.');
+      setLoading(true);
+      try {
+        const result = await resetPassword({ token: resetToken, password, confirmPassword });
+        toast.success(result.message);
+        window.history.replaceState({}, '', window.location.pathname);
+        setMode('sign-in');
+        setPassword('');
+        setConfirmPassword('');
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : 'Unable to reset your password.');
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
     if (mode === 'sign-up') {
       if (!acceptedTerms) return toast.error('Please accept the terms to create an account.');
       if (strength < 5) return toast.error('Please meet every password requirement.');
@@ -2728,13 +2762,11 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: (user: AuthUser) => 
           : mode === 'admin-setup'
             ? await createDemoAdmin(email, password)
             : await signIn({ email, password, portal });
-      if (mode === 'admin-setup')
+      if (mode === 'admin-setup') {
         toast.success('Local administrator created. Sign in through the administrator portal.');
-      else {
+      } else {
         onAuthenticated(user);
-        toast.success(
-          mode === 'sign-up' ? 'Your account is ready.' : `Welcome back, ${user.fullName.split(' ')[0]}.`,
-        );
+        toast.success(mode === 'sign-up' ? 'Your account is ready.' : `Welcome back, ${user.fullName.split(' ')[0]}.`);
       }
       if (mode === 'admin-setup') {
         setMode('sign-in');
