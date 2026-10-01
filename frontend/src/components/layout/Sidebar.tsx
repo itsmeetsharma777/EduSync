@@ -6,7 +6,7 @@ import { nav } from '../../config/navigation';
 import type { View } from '../../types/navigation';
 import type { AuthUser } from '../../services/auth';
 
-function Sidebar({
+export function Sidebar({
   active,
   setActive,
   collapsed,
