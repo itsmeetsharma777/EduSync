@@ -19,7 +19,6 @@ app.use(cors({ origin: env.clientOrigin, credentials: true }));
 app.use(cookieParser());
 app.use(express.json({ limit: '1mb' }));
 const apiLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 240, standardHeaders: 'draft-8', legacyHeaders: false });
-const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 40, standardHeaders: 'draft-8', legacyHeaders: false });
 app.use(apiLimiter);
 app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'edusync-api' }));
 app.use('/api/auth', authRoutes);
