@@ -1,4 +1,4 @@
-import { Bell, Menu, Moon, Search, Settings, Sun } from 'lucide-react';
+import { Bell, CheckCircle2, Menu, Moon, Search, Settings, Sun, AlertCircle } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { Avatar } from '../common/Avatar';
 import { IconButton } from '../common/IconButton';
@@ -12,6 +12,8 @@ export function Header({
   openCommand,
   setActive,
   user,
+  syncing,
+  syncError,
 }: {
   onMenu: () => void;
   dark: boolean;
@@ -19,33 +21,36 @@ export function Header({
   openCommand: () => void;
   setActive: (view: View) => void;
   user: AuthUser;
+  syncing: boolean;
+  syncError: boolean;
 }) {
   return (
     <header className="topbar">
       <button className="mobile-menu" aria-label="Open navigation" onClick={onMenu}>
-        <Menu size={22} />
+        <Menu size={20} />
       </button>
       <button className="command-search" onClick={openCommand} aria-label="Open command palette">
-        <Search size={18} />
+        <Search size={17} />
         <span>Search or jump to a page</span>
         <kbd>⌘ K</kbd>
       </button>
+      <div className={`sync-status ${syncError ? 'error' : ''}`}>
+        {syncError ? <AlertCircle size={13} /> : <CheckCircle2 size={13} />}
+        <i />
+        {syncError ? 'Sync needs attention' : syncing ? 'Saving…' : 'Saved'}
+      </div>
       <div className="header-actions">
         <IconButton label="Open settings" onClick={() => setActive('Settings')}>
-          <Settings size={19} />
+          <Settings size={18} />
         </IconButton>
         <IconButton label="Toggle theme" onClick={toggleDark}>
-          {dark ? <Sun size={19} /> : <Moon size={19} />}
+          {dark ? <Sun size={18} /> : <Moon size={18} />}
         </IconButton>
-        <div className="notification-wrap">
-          <IconButton label="Notifications" onClick={() => toast('You’re all caught up!')}>
-            <Bell size={19} />
-          </IconButton>
-          <span />
-        </div>
+        <IconButton label="Notifications" onClick={() => toast('You’re all caught up.')}>
+          <Bell size={18} />
+        </IconButton>
         <Avatar className="top-avatar" name={user.fullName} />
       </div>
     </header>
   );
 }
-
