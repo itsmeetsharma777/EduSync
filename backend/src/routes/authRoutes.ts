@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import {
   adminSignIn,
+  requestPasswordReset,
+  resetPassword,
   getMe,
   googleCallback,
   googleStart,
@@ -18,6 +20,8 @@ export const authRoutes = Router();
 authRoutes.post('/sign-up', signUp);
 authRoutes.post('/sign-in', signIn);
 authRoutes.post('/admin/sign-in', adminSignIn);
+authRoutes.post('/password/forgot', requestPasswordReset);
+authRoutes.post('/password/reset', resetPassword);
 authRoutes.get('/me', requireAuth, getMe);
 authRoutes.post('/sign-out', requireAuth, signOut);
 authRoutes.get('/sessions', requireAuth, listSessions);
