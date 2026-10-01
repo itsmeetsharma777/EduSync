@@ -139,6 +139,56 @@ export const signUp: RequestHandler = async (req, res) => {
   });
 };
 
+
+const forgotPasswordSchema = z.object({ email: z.string().email() });
+const resetPasswordSchema = z.object({ token: z.string().min(1), password: passwordSchema, confirmPassword: z.string() })
+  .refine((input) => input.password === input.confirmPassword, { message: 'Passwords do not match.', path: ['confirmPassword'] });
+
+async function sendPasswordResetEmail(user: any, rawToken: string) {
+  if (!env.resendApiKey || !env.emailFrom) return false;
+  const resetUrl = `${env.clientOrigin}/?resetToken=${rawToken}`;
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${env.resendApiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      from: env.emailFrom,
+      to: [user.email],
+      subject: 'Reset your EduSync password',
+      html: `<p>Hi ${user.fullName},</p><p><a href="${resetUrl}">Reset your EduSync password</a></p><p>This link expires in 30 minutes.</p>`,
+    }),
+  });
+  return response.ok;
+}
+
+export const requestPasswordReset: RequestHandler = async (req, res) => {
+  const { email } = forgotPasswordSchema.parse(req.body);
+  const user = await User.findOne({ email: email.toLowerCase() });
+  if (user) {
+    const rawToken = crypto.randomBytes(32).toString('hex');
+    user.passwordResetTokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+    user.passwordResetExpiresAt = new Date(Date.now() + 1000 * 60 * 30);
+    await user.save();
+    await sendPasswordResetEmail(user, rawToken);
+  }
+  return res.json({ message: 'If an account exists for that email, a password reset link has been sent.' });
+};
+
+export const resetPassword: RequestHandler = async (req, res) => {
+  const input = resetPasswordSchema.parse(req.body);
+  const tokenHash = crypto.createHash('sha256').update(input.token).digest('hex');
+  const user = await User.findOne({
+    passwordResetTokenHash: tokenHash,
+    passwordResetExpiresAt: { $gt: new Date() },
+  }).select('+passwordHash +passwordResetTokenHash +passwordResetExpiresAt');
+  if (!user) return res.status(400).json({ message: 'This password reset link is invalid or expired.' });
+  user.passwordHash = await bcrypt.hash(input.password, 12);
+  user.passwordResetTokenHash = undefined;
+  user.passwordResetExpiresAt = undefined;
+  user.sessions = [];
+  await user.save();
+  return res.json({ message: 'Password reset successfully. Please sign in again.' });
+};
+
 export const signIn: RequestHandler = async (req, res) => loginWithPassword(req, res);
 export const adminSignIn: RequestHandler = async (req, res) => loginWithPassword(req, res, true);
 
