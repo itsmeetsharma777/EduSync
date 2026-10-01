@@ -6,7 +6,8 @@ export type AuthUser = {
 type LocalAccount = AuthUser & { passwordHash: string; isSuspended?: boolean };
 const sessionKey = 'edusync-auth-session';
 const accountsKey = 'edusync-demo-accounts';
-const apiRoot = import.meta.env.VITE_API_URL?.replace(/\/$/, '');
+const apiRoot = import.meta.env.VITE_API_URL?.replace(/\/$/, '') ?? '';
+const apiBase = apiRoot ? (apiRoot.endsWith('/api') ? apiRoot : `${apiRoot}/api`) : '';
 
 function makeId() { return `user-${crypto.randomUUID()}`; }
 async function hashPassword(value: string) {
@@ -18,7 +19,7 @@ function readAccounts(): LocalAccount[] {
   try { return JSON.parse(localStorage.getItem(accountsKey) ?? '[]') as LocalAccount[]; } catch { return []; }
 }
 function writeAccounts(accounts: LocalAccount[]) { localStorage.setItem(accountsKey, JSON.stringify(accounts)); }
-export const apiConfigured = Boolean(apiRoot);
+export const apiConfigured = Boolean(apiBase);
 export function readSession() {
   try { return JSON.parse(localStorage.getItem(sessionKey) ?? 'null') as AuthUser | null; } catch { return null; }
 }
@@ -26,7 +27,7 @@ export function saveSession(user: AuthUser) { localStorage.setItem(sessionKey, J
 export function clearSession() { localStorage.removeItem(sessionKey); }
 
 async function request<T>(path: string, options: RequestInit = {}) {
-  const response = await fetch(`${apiRoot}${path}`, {
+  const response = await fetch(`${apiBase}${path}`, {
     ...options, headers: { 'Content-Type': 'application/json', ...options.headers }, credentials: 'include',
   });
   const payload = (await response.json().catch(() => ({}))) as T & { message?: string };
@@ -35,7 +36,7 @@ async function request<T>(path: string, options: RequestInit = {}) {
 }
 
 export async function createAccount(input: { fullName: string; email: string; phone: string; password: string }) {
-  if (apiRoot) {
+  if (apiBase) {
     const payload = await request<{ user: AuthUser }>('/auth/sign-up', { method: 'POST', body: JSON.stringify({ ...input, confirmPassword: input.password, acceptedTerms: true }) });
     saveSession(payload.user); return payload.user;
   }
@@ -63,7 +64,7 @@ export async function signOut() {
   clearSession();
 }
 export async function summarizeLecture(input: { title: string; transcript: string; courseContext?: string }) {
-  if (!apiRoot) throw new Error('Video summaries need the API URL and an OPENAI_API_KEY configured on the server.');
+  if (!apiBase) throw new Error('Video summaries need the API URL and an OPENAI_API_KEY configured on the server.');
   return request<{ summary: string }>('/ai/lectures/summary', { method: 'POST', body: JSON.stringify(input) });
 }
 export function localAdminExists() { return readAccounts().some((account) => account.role === 'admin'); }
@@ -78,7 +79,7 @@ export function updateLocalUser(user: AuthUser & { isSuspended?: boolean }) {
   writeAccounts(readAccounts().map((account) => account.id === user.id ? { ...account, ...user } : account));
 }
 export async function loadAdminStats() {
-  if (!apiRoot) return null;
+  if (!apiBase) return null;
   return request<{ users: number; activeUsers: number; subjects: number }>('/admin/stats');
 }
 
@@ -99,7 +100,7 @@ export async function deleteManagedUser(id: string) {
 
 
 export async function getCurrentUser() {
-  if (!apiRoot) return readSession();
+  if (!apiBase) return readSession();
   try {
     const payload = await request<{ user: AuthUser }>('/auth/me');
     saveSession(payload.user);
@@ -119,17 +120,17 @@ export type SessionInfo = {
 };
 
 export async function listSessions() {
-  if (!apiRoot) return [];
+  if (!apiBase) return [];
   return (await request<{ sessions: SessionInfo[] }>('/auth/sessions')).sessions;
 }
 
 export async function revokeSession(id: string) {
-  if (!apiRoot) return;
+  if (!apiBase) return;
   await request(`/auth/sessions/${id}`, { method: 'DELETE' });
 }
 
 export async function requestPasswordReset(email: string) {
-  if (!apiRoot) throw new Error('Password reset needs the backend API configured.');
+  if (!apiBase) throw new Error('Password reset needs the backend API configured.');
   return request<{ message: string }>('/auth/password/forgot', { method: 'POST', body: JSON.stringify({ email }) });
 }
 export async function resetPassword(input: { token: string; password: string; confirmPassword: string }) {
