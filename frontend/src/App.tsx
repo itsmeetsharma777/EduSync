@@ -100,9 +100,9 @@ import {
   YAxis,
 } from 'recharts';
 import { toast } from 'react-toastify';
-import { downloadFile, makeId, useLocalStorage } from './lib/storage';
-import { loadWorkspace, persistWorkspace } from './lib/api';
-import { seedWorkspace } from './lib/seed';
+import { downloadFile, makeId, useLocalStorage } from './utils/storage';
+import { loadWorkspace, persistWorkspace } from './services/api';
+import { seedWorkspace } from './data/seedWorkspace';
 import type {
   Activity,
   Goal,
@@ -113,7 +113,7 @@ import type {
   Subject,
   TaskKind,
   WorkspaceData,
-} from './lib/types';
+} from './types';
 import {
   apiConfigured,
   clearSession,
@@ -129,7 +129,7 @@ import {
   summarizeLecture,
   updateManagedUser,
   type AuthUser,
-} from './lib/auth';
+} from './services/auth';
 
 type View =
   | 'Dashboard'
