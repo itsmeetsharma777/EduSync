@@ -84,7 +84,7 @@ import type { View } from './types/navigation';
 import { downloadFile, makeId, useLocalStorage } from './utils/storage';
 import { loadWorkspace, persistWorkspace, submitFeedback } from './services/api';
 import { seedWorkspace } from './data/seedWorkspace';
-import type { Lecture, LectureStatus, Note, StudyTask, Subject, TaskKind, WorkspaceData } from './types';
+import type { Lecture, LectureStatus, Note, StudyDay, StudyTask, Subject, TaskKind, WorkspaceData } from './types';
 import {
   apiConfigured,
   clearSession,
@@ -109,15 +109,32 @@ import {
 
 type ModalName = 'new-subject' | 'new-task' | 'subject' | null;
 
-const weeklyFocus = [
-  { day: 'Mon', mins: 38 },
-  { day: 'Tue', mins: 64 },
-  { day: 'Wed', mins: 48 },
-  { day: 'Thu', mins: 82 },
-  { day: 'Fri', mins: 56 },
-  { day: 'Sat', mins: 96 },
-  { day: 'Sun', mins: 71 },
-];
+function getStudyWeek(history: StudyDay[]) {
+  const byDate = new Map(history.map((entry) => [entry.date, entry.minutes]));
+  return Array.from({ length: 7 }, (_, index) => {
+    const date = new Date();
+    date.setHours(0, 0, 0, 0);
+    date.setDate(date.getDate() - (6 - index));
+    const key = date.toISOString().slice(0, 10);
+    return { day: new Intl.DateTimeFormat('en-IN', { weekday: 'short' }).format(date), mins: byDate.get(key) ?? 0 };
+  });
+}
+
+function studyStreak(history: StudyDay[]) {
+  const activeDates = new Set(history.filter((entry) => entry.minutes > 0).map((entry) => entry.date));
+  let streak = 0;
+  const date = new Date();
+  date.setHours(0, 0, 0, 0);
+  while (activeDates.has(date.toISOString().slice(0, 10))) {
+    streak += 1;
+    date.setDate(date.getDate() - 1);
+  }
+  return streak;
+}
+
+function openLecture(url: string) {
+  window.open(url, '_blank', 'noopener,noreferrer');
+}
 
 const quotes = [
   'Progress becomes visible when you give your attention somewhere on purpose.',
@@ -300,6 +317,8 @@ function Dashboard({
     .at(0);
   const openTasks = data.tasks.filter((task) => !task.done).sort((a, b) => a.due.localeCompare(b.due));
   const progress = Math.min(100, Math.round((data.studiedTodayMinutes / data.dailyGoalMinutes) * 100));
+  const weeklyFocus = getStudyWeek(data.studyHistory);
+  const streak = studyStreak(data.studyHistory);
   const completedLessons = data.subjects.reduce(
     (sum, subject) => sum + subject.lectures.filter((lecture) => lecture.status === 'completed').length,
     0,
@@ -373,7 +392,7 @@ function Dashboard({
       </section>
 
       <div className="metric-grid">
-        <MetricCard icon={<Flame size={18} />} label="Study streak" value="7 days" hint="Keep the rhythm going" />
+        <MetricCard icon={<Flame size={18} />} label="Study streak" value={`${streak} ${streak === 1 ? 'day' : 'days'}`} hint={streak ? 'Consecutive study days' : 'Start a study block today'} />
         <MetricCard icon={<CheckCircle2 size={18} />} label="Tasks left" value={String(openTasks.length)} hint="Across your study plan" />
         <MetricCard icon={<Trophy size={18} />} label="Lessons complete" value={String(completedLessons)} hint={`${totalLessons || 0} lessons tracked`} />
         <MetricCard icon={<Zap size={18} />} label="Workspace" value={apiConfigured ? 'Synced' : 'Preview'} hint={apiConfigured ? 'Cloud persistence on' : 'Connect the API for sync'} />
@@ -736,7 +755,9 @@ function LibraryPage({ data, updateLecture }: { data: WorkspaceData; updateLectu
       <Card className="resource-card">
         {resources.length ? resources.map(({ lecture, subject }) => (
           <article className="resource-row" key={lecture.id}>
+            <button className="resource-open" onClick={() => openLecture(lecture.url)} aria-label={`Open ${lecture.title}`}>
             <div className="resource-thumb">{getYoutubeThumbnail(lecture.url) ? <img src={getYoutubeThumbnail(lecture.url)} alt="" /> : <BookOpen size={21} />}</div>
+            </button>
             <div className="resource-main"><strong>{lecture.title}</strong><span>{subject.name} · {lecture.channel} · {lecture.duration}</span></div>
             <span className={`status-badge ${lecture.status}`}>{lecture.status.replace('_', ' ')}</span>
             <button className="icon-button" onClick={() => updateLecture(subject.id, { ...lecture, favorite: !lecture.favorite })} aria-label="Toggle favorite"><Heart size={17} fill={lecture.favorite ? 'currentColor' : 'none'} /></button>
@@ -913,7 +934,7 @@ function SubjectWorkbench({
             {subject.lectures.map((lecture) => (
               <article className="lecture-row-new" key={lecture.id}>
                 <div className="lecture-thumb-new">{getYoutubeThumbnail(lecture.url) ? <img src={getYoutubeThumbnail(lecture.url)} alt="" /> : <Play size={17} />}</div>
-                <div className="lecture-info"><strong>{lecture.title}</strong><span>{lecture.channel} · {lecture.duration}</span><div className="tag-row">{lecture.tags.map((tag) => <i key={tag}>{tag}</i>)}</div></div>
+                <button className="lecture-info lecture-open" onClick={() => openLecture(lecture.url)} aria-label={`Open ${lecture.title}`}><strong>{lecture.title}</strong><span>{lecture.channel} · {lecture.duration}</span><div className="tag-row">{lecture.tags.map((tag) => <i key={tag}>{tag}</i>)}</div></button>
                 <button className={`status-button ${lecture.status}`} onClick={() => updateLecture(subject.id, { ...lecture, status: cycleLectureStatus(lecture.status) })}>{lecture.status.replace('_', ' ')}</button>
                 <button className="icon-button" onClick={() => updateLecture(subject.id, { ...lecture, favorite: !lecture.favorite })} aria-label="Favorite"><Heart size={16} fill={lecture.favorite ? 'currentColor' : 'none'} /></button>
                 <button className="icon-button" onClick={() => updateLecture(subject.id, { ...lecture, bookmarked: !lecture.bookmarked })} aria-label="Bookmark"><Bookmark size={16} fill={lecture.bookmarked ? 'currentColor' : 'none'} /></button>
@@ -1083,7 +1104,7 @@ function Workspace({ user, onLogout }: { user: AuthUser; onLogout: () => void })
     let cancelled = false;
     loadWorkspace().then((remote) => {
       if (cancelled) return;
-      if (remote) setData(remote);
+      if (remote) setData({ ...remote, studyHistory: remote.studyHistory ?? [] });
       setRemoteReady(true);
     }).catch(() => {
       if (!cancelled) { setSyncError(true); setRemoteReady(true); }
@@ -1119,7 +1140,15 @@ function Workspace({ user, onLogout }: { user: AuthUser; onLogout: () => void })
   };
 
   const addMinutes = (minutes: number) => {
-    update((current) => ({ ...current, studiedTodayMinutes: current.studiedTodayMinutes + minutes }));
+    update((current) => {
+      const today = new Date().toISOString().slice(0, 10);
+      const history = [...(current.studyHistory ?? [])];
+      const existing = history.find((entry) => entry.date === today);
+      const nextHistory = existing
+        ? history.map((entry) => entry.date === today ? { ...entry, minutes: entry.minutes + minutes } : entry)
+        : [...history, { date: today, minutes }];
+      return { ...current, studiedTodayMinutes: current.studiedTodayMinutes + minutes, studyHistory: nextHistory.slice(-366) };
+    });
     addActivity(`Completed a ${minutes}-minute focus block`, 'study');
   };
 
@@ -1171,7 +1200,7 @@ function Workspace({ user, onLogout }: { user: AuthUser; onLogout: () => void })
       try {
         const parsed = JSON.parse(String(reader.result)) as WorkspaceData;
         if (!Array.isArray(parsed.subjects) || !Array.isArray(parsed.tasks) || !Array.isArray(parsed.notes)) throw new Error('Invalid backup');
-        setData({ ...blankWorkspace, ...parsed });
+        setData({ ...blankWorkspace, ...parsed, studyHistory: Array.isArray(parsed.studyHistory) ? parsed.studyHistory : [] });
         toast.success('Workspace restored.');
       } catch { toast.error('That file is not a valid EduSync backup.'); }
     };
