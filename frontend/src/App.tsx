@@ -1149,7 +1149,14 @@ function Workspace({ user, onLogout }: { user: AuthUser; onLogout: () => void })
     if (!transcript?.trim()) return;
     try {
       const result = await summarizeLecture({ title: lecture.title, transcript });
-      update((current) => ({ ...current, subjects: current.subjects.map((subject) => subject.id === selectedSubjectId ? { ...subject, lectures: subject.lectures.map((item) => item.id === lecture.id ? { ...item, summary: result.summary } : item) } : subject) }));
+      update((current) => ({
+        ...current,
+        subjects: current.subjects.map((subject) =>
+          subject.lectures.some((item) => item.id === lecture.id)
+            ? { ...subject, lectures: subject.lectures.map((item) => item.id === lecture.id ? { ...item, summary: result.summary } : item) }
+            : subject,
+        ),
+      }));
       toast.success('AI study summary saved to the lesson.');
     } catch (error) { toast.error(error instanceof Error ? error.message : 'Unable to create the summary.'); }
   };
