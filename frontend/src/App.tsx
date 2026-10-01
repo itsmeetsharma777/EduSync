@@ -50,6 +50,7 @@ import {
   Send,
   Settings,
   ShieldCheck,
+  ShieldAlert,
   Sparkles,
   Sun,
   Target,
