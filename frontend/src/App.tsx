@@ -101,6 +101,7 @@ import {
 } from 'recharts';
 import { toast } from 'react-toastify';
 import { downloadFile, makeId, useLocalStorage } from './lib/storage';
+import { loadWorkspace, persistWorkspace } from './lib/api';
 import { seedWorkspace } from './lib/seed';
 import type {
   Activity,
@@ -2515,10 +2516,37 @@ function Workspace({ authUser, onLogout }: { authUser: AuthUser; onLogout: () =>
     activity: [],
     studiedTodayMinutes: 0,
   };
+  const [remoteReady, setRemoteReady] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [data, setData] = useLocalStorage<WorkspaceData>(
     `edusync-workspace-v3-${authUser.id}`,
     authUser.role === 'admin' ? seedWorkspace : emptyWorkspace,
   );
+  useEffect(() => {
+    let cancelled = false;
+    loadWorkspace()
+      .then((remote) => {
+        if (cancelled) return;
+        if (remote) setData(remote);
+        else persistWorkspace(data).catch(() => undefined);
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) setRemoteReady(true);
+      });
+    return () => { cancelled = true; };
+  }, [authUser.id]);
+
+  useEffect(() => {
+    if (!remoteReady) return;
+    const timer = window.setTimeout(() => {
+      setSyncing(true);
+      persistWorkspace(data)
+        .catch(() => undefined)
+        .finally(() => setSyncing(false));
+    }, 500);
+    return () => window.clearTimeout(timer);
+  }, [data, remoteReady]);
   const [active, setActive] = useState<View>(authUser.role === 'admin' ? 'Admin' : 'Dashboard');
   const [menuOpen, setMenuOpen] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
