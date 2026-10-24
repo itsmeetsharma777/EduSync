@@ -7,6 +7,7 @@ import {
   LineChart,
   ListChecks,
   PenLine,
+  Settings,
 } from 'lucide-react';
 
 export const nav: { label: View; icon: typeof Home }[] = [
@@ -17,4 +18,5 @@ export const nav: { label: View; icon: typeof Home }[] = [
   { label: 'Notes', icon: PenLine },
   { label: 'Analytics', icon: LineChart },
   { label: 'Library', icon: BookOpen },
+  { label: 'Settings', icon: Settings },
 ];

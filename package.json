@@ -11,6 +11,7 @@
     "backend:build": "tsc -p backend/tsconfig.json",
     "build": "npm run frontend:build && npm run backend:build",
     "lint": "eslint frontend backend --ext .ts,.tsx",
+    "test": "tsx --test backend/src/**/*.test.ts",
     "format": "prettier --write frontend backend package.json",
     "preview": "vite preview --config frontend/vite.config.ts"
   },

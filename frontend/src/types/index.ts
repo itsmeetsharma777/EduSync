@@ -1,6 +1,6 @@
 export type LectureStatus = 'not_started' | 'in_progress' | 'completed';
 export type TaskKind = 'assignment' | 'exam' | 'revision';
-export type Lecture = { id: string; title: string; url: string; duration: string; channel: string; status: LectureStatus; favorite: boolean; bookmarked: boolean; tags: string[]; note: string; summary?: string; };
+export type Lecture = { id: string; title: string; url: string; duration: string; channel: string; status: LectureStatus; favorite: boolean; bookmarked: boolean; tags: string[]; note: string; summary?: string; youtubeId?: string; durationSeconds?: number; lastPositionSeconds?: number; progressPercent?: number; lastWatchedAt?: string; completedAt?: string; };
 export type Subject = { id: string; name: string; detail: string; short: string; color: string; accent: 'lavender' | 'peach' | 'mint' | 'neutral'; deadline: string; icon: string; pinned: boolean; lectures: Lecture[]; };
 export type StudyTask = { id: string; title: string; subjectId: string; due: string; kind: TaskKind; priority: 'low' | 'medium' | 'high'; done: boolean; };
 export type Note = { id: string; title: string; subjectId: string; body: string; updatedAt: string; };

@@ -83,33 +83,44 @@ import { Header } from './components/layout/Header';
 import { Sidebar } from './components/layout/Sidebar';
 import type { View } from './types/navigation';
 import { downloadFile, makeId, useLocalStorage } from './utils/storage';
-import { loadWorkspace, persistWorkspace, submitFeedback } from './services/api';
+import { parseYouTubeUrl } from './utils/youtube';
 import { seedWorkspace } from './data/seedWorkspace';
 import type { Lecture, LectureStatus, Note, StudyDay, StudyTask, Subject, TaskKind, WorkspaceData } from './types';
 import {
-  apiConfigured,
-  clearSession,
-  createAccount,
-  createDemoAdmin,
   deleteManagedUser,
-  getCurrentUser,
   listManagedUsers,
   loadAdminStats,
-  listSessions,
-  readSession,
-  requestPasswordReset,
-  resetPassword,
-  revokeSession,
-  saveSession,
-  signIn,
-  signOut,
   summarizeLecture,
   updateManagedUser,
-  verifyEmail,
   type AuthUser,
 } from './services/auth';
 
-type ModalName = 'new-subject' | 'new-task' | 'subject' | null;
+type ModalName = 'new-subject' | 'new-task' | 'subject' | 'contact' | null;
+
+type AppearancePreset = 'crystal' | 'frosted' | 'deep' | 'liquid' | 'minimal';
+type Preferences = {
+  name: string;
+  preset: AppearancePreset;
+  accent: 'coral' | 'violet' | 'teal' | 'gold';
+  glassOpacity: number;
+  blur: number;
+  reflection: number;
+  depth: number;
+  tilt: boolean;
+  compact: boolean;
+};
+
+const defaultPreferences: Preferences = {
+  name: '', preset: 'frosted', accent: 'coral', glassOpacity: 0.76, blur: 18, reflection: 0.42, depth: 0.5, tilt: true, compact: false,
+};
+
+const appearancePresets: Record<AppearancePreset, Omit<Preferences, 'name' | 'preset' | 'accent' | 'tilt' | 'compact'>> = {
+  crystal: { glassOpacity: 0.38, blur: 12, reflection: 0.7, depth: 0.3 },
+  frosted: { glassOpacity: 0.76, blur: 18, reflection: 0.42, depth: 0.5 },
+  deep: { glassOpacity: 0.88, blur: 24, reflection: 0.24, depth: 0.8 },
+  liquid: { glassOpacity: 0.56, blur: 30, reflection: 0.85, depth: 0.7 },
+  minimal: { glassOpacity: 0.93, blur: 4, reflection: 0.08, depth: 0.15 },
+};
 
 function getStudyWeek(history: StudyDay[]) {
   const byDate = new Map(history.map((entry) => [entry.date, entry.minutes]));
@@ -184,19 +195,82 @@ function subjectName(subjects: Subject[], id: string) {
 }
 
 function getYoutubeThumbnail(url: string) {
-  try {
-    const parsed = new URL(url);
-    const id = parsed.searchParams.get('v') ?? parsed.pathname.split('/').filter(Boolean).pop();
-    return id ? `https://i.ytimg.com/vi/${id}/hqdefault.jpg` : '';
-  } catch {
-    return '';
-  }
+  const video = parseYouTubeUrl(url);
+  return video ? `https://i.ytimg.com/vi/${video.videoId}/hqdefault.jpg` : '';
 }
 
 function cycleLectureStatus(status: LectureStatus): LectureStatus {
   if (status === 'not_started') return 'in_progress';
   if (status === 'in_progress') return 'completed';
   return 'not_started';
+}
+
+type YouTubePlayer = { getCurrentTime: () => number; getDuration: () => number; seekTo: (seconds: number, allowSeekAhead: boolean) => void; destroy: () => void };
+type YouTubeApi = { Player: new (element: HTMLElement, options: Record<string, unknown>) => YouTubePlayer; PlayerState: { ENDED: number; PLAYING: number } };
+let youtubeApi: Promise<YouTubeApi> | undefined;
+
+function loadYouTubeApi() {
+  if (youtubeApi) return youtubeApi;
+  youtubeApi = new Promise((resolve, reject) => {
+    const existing = (window as Window & { YT?: YouTubeApi }).YT;
+    if (existing?.Player) return resolve(existing);
+    const script = document.createElement('script');
+    script.src = 'https://www.youtube.com/iframe_api';
+    script.async = true;
+    script.onerror = () => reject(new Error('Unable to load the YouTube player.'));
+    const priorReady = (window as Window & { onYouTubeIframeAPIReady?: () => void }).onYouTubeIframeAPIReady;
+    (window as Window & { onYouTubeIframeAPIReady?: () => void }).onYouTubeIframeAPIReady = () => {
+      priorReady?.();
+      const api = (window as Window & { YT?: YouTubeApi }).YT;
+      if (api?.Player) resolve(api); else reject(new Error('YouTube player did not initialize.'));
+    };
+    document.head.append(script);
+  });
+  return youtubeApi;
+}
+
+function VideoPlayer({ lecture, onProgress }: { lecture: Lecture; onProgress: (lecture: Lecture) => void }) {
+  const playerHost = useRef<HTMLDivElement>(null);
+  const latest = useRef(lecture);
+  const latestProgress = useRef(onProgress);
+  const video = parseYouTubeUrl(lecture.url);
+  const videoId = video?.videoId;
+  const [playerError, setPlayerError] = useState('');
+
+  useEffect(() => { latest.current = lecture; }, [lecture]);
+  useEffect(() => { latestProgress.current = onProgress; }, [onProgress]);
+  useEffect(() => {
+    if (!videoId || !playerHost.current) return;
+    let player: YouTubePlayer | undefined;
+    let timer: number | undefined;
+    let cancelled = false;
+    const saveProgress = () => {
+      if (!player) return;
+      const current = latest.current;
+      const position = player.getCurrentTime();
+      const duration = player.getDuration();
+      if (!Number.isFinite(position) || !Number.isFinite(duration) || duration <= 0 || position < 0) return;
+      const percent = Math.min(100, Math.round((position / duration) * 100));
+      if (Math.abs(position - (current.lastPositionSeconds ?? 0)) < 3 && percent === (current.progressPercent ?? 0)) return;
+      latestProgress.current({ ...current, lastPositionSeconds: position, durationSeconds: duration, progressPercent: percent, lastWatchedAt: new Date().toISOString(), status: percent >= 90 ? 'completed' : position > 0 ? 'in_progress' : current.status, completedAt: percent >= 90 ? new Date().toISOString() : current.completedAt });
+    };
+    loadYouTubeApi().then((YT) => {
+      if (cancelled || !playerHost.current) return;
+      player = new YT.Player(playerHost.current, {
+        videoId,
+        playerVars: { origin: window.location.origin, rel: 0, playsinline: 1, start: Math.floor(latest.current.lastPositionSeconds ?? 0) },
+        events: {
+          onReady: () => { const resume = latest.current.lastPositionSeconds ?? 0; if (resume > 0) player?.seekTo(resume, true); timer = window.setInterval(saveProgress, 5_000); },
+          onStateChange: (event: { data: number }) => { if (event.data === YT.PlayerState.PLAYING) saveProgress(); if (event.data === YT.PlayerState.ENDED) latestProgress.current({ ...latest.current, progressPercent: 100, status: 'completed', completedAt: new Date().toISOString(), lastWatchedAt: new Date().toISOString() }); },
+        },
+      });
+    }).catch((error) => setPlayerError(error instanceof Error ? error.message : 'Unable to load the YouTube player.'));
+    return () => { if (timer) window.clearInterval(timer); saveProgress(); player?.destroy(); cancelled = true; };
+  }, [videoId]);
+
+  if (!video) return <p className="player-error">This lesson does not contain a supported YouTube URL.</p>;
+  const resume = Math.max(0, Math.floor(lecture.lastPositionSeconds ?? 0));
+  return <section className="video-player"><div ref={playerHost} className="youtube-host" aria-label={`YouTube player: ${lecture.title}`} />{playerError && <p className="player-error">{playerError}</p>}<div className="video-player-meta"><span>{lecture.progressPercent ?? 0}% watched{resume ? ` · resumes at ${Math.floor(resume / 60)}:${String(resume % 60).padStart(2, '0')}` : ''}</span><a href={lecture.url} target="_blank" rel="noreferrer">Open on YouTube</a></div></section>;
 }
 
 function Card({
@@ -260,8 +334,15 @@ function MetricCard({
 }
 
 function FocusTimer({ onFinish }: { onFinish: (minutes: number) => void }) {
+  const [duration, setDuration] = useState(25);
   const [seconds, setSeconds] = useState(25 * 60);
   const [running, setRunning] = useState(false);
+
+  const changeDuration = (next: number) => {
+    const safeDuration = Math.min(180, Math.max(1, Math.floor(next) || 1));
+    setDuration(safeDuration);
+    if (!running) setSeconds(safeDuration * 60);
+  };
 
   useEffect(() => {
     if (!running) return;
@@ -269,15 +350,15 @@ function FocusTimer({ onFinish }: { onFinish: (minutes: number) => void }) {
       setSeconds((current) => {
         if (current <= 1) {
           setRunning(false);
-          onFinish(25);
-          toast.success('25-minute focus block complete. Nice work.');
-          return 25 * 60;
+          onFinish(duration);
+          toast.success(`${duration}-minute focus block complete. Nice work.`);
+          return duration * 60;
         }
         return current - 1;
       });
     }, 1000);
     return () => window.clearInterval(interval);
-  }, [running, onFinish]);
+  }, [running, onFinish, duration]);
 
   const minutes = Math.floor(seconds / 60).toString().padStart(2, '0');
   const remaining = (seconds % 60).toString().padStart(2, '0');
@@ -291,9 +372,13 @@ function FocusTimer({ onFinish }: { onFinish: (minutes: number) => void }) {
       <div className="timer-copy">
         <span className="eyebrow">FOCUS</span>
         <h3>One block. One task.</h3>
-        <p>Work for 25 minutes, then take a short break. Completed blocks count toward today.</p>
+        <p>Choose a duration that fits your energy. Completed blocks count toward today.</p>
+        <div className="timer-controls" aria-label="Focus duration">
+          {[15, 25, 45, 60].map((value) => <button key={value} type="button" className={duration === value ? 'selected' : ''} onClick={() => changeDuration(value)}>{value} min</button>)}
+          <label>Custom <input type="number" min="1" max="180" value={duration} onChange={(event) => changeDuration(Number(event.target.value))} /> min</label>
+        </div>
         <button className="button button-primary" onClick={() => setRunning((value) => !value)}>
-          {running ? <><Clock3 size={16} /> Pause block</> : <><Play size={16} fill="currentColor" /> Start 25 min</>}
+          {running ? <><Clock3 size={16} /> Pause block</> : <><Play size={16} fill="currentColor" /> Start {duration} min</>}
         </button>
       </div>
     </div>
@@ -405,7 +490,7 @@ function Dashboard({
         <MetricCard icon={<Flame size={18} />} label="Study streak" value={`${streak} ${streak === 1 ? 'day' : 'days'}`} hint={streak ? 'Consecutive study days' : 'Start a study block today'} />
         <MetricCard icon={<CheckCircle2 size={18} />} label="Tasks left" value={String(openTasks.length)} hint="Across your study plan" />
         <MetricCard icon={<Trophy size={18} />} label="Lessons complete" value={String(completedLessons)} hint={`${totalLessons || 0} lessons tracked`} />
-        <MetricCard icon={<Zap size={18} />} label="Workspace" value={apiConfigured ? 'Synced' : 'Preview'} hint={apiConfigured ? 'Cloud persistence on' : 'Connect the API for sync'} />
+        <MetricCard icon={<Zap size={18} />} label="Workspace" value="Private" hint="Saved only on this device" />
       </div>
 
       <div className="dashboard-columns">
@@ -784,27 +869,39 @@ function LibraryPage({ data, updateLecture }: { data: WorkspaceData; updateLectu
 function SettingsPage({
   data,
   setData,
-  user,
+  preferences,
+  setPreferences,
   onExport,
   onImport,
 }: {
   data: WorkspaceData;
   setData: Dispatch<SetStateAction<WorkspaceData>>;
-  user: AuthUser;
+  preferences: Preferences;
+  setPreferences: Dispatch<SetStateAction<Preferences>>;
   onExport: () => void;
   onImport: (file: File) => void;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
-  const [sessions, setSessions] = useState<Array<{ id: string; device: string; createdAt: string; lastActiveAt: string; current: boolean }>>([]);
   const [summary, setSummary] = useLocalStorage('edusync-weekly-summary', false);
-
-  useEffect(() => {
-    listSessions().then(setSessions).catch(() => undefined);
-  }, [user.id]);
 
   return (
     <div className="page">
       <PageHeader eyebrow="YOUR WORKSPACE" title="Settings" text="Personalize EduSync and keep control of your account and data." />
+      <Card className="appearance-studio">
+        <div className="card-heading"><div><span className="eyebrow">APPEARANCE STUDIO</span><h3>Make EduSync feel like yours</h3></div><Sparkles size={19} /></div>
+        <div className="preference-grid">
+          <label className="preference-name">Display name<input value={preferences.name} onChange={(event) => setPreferences((current) => ({ ...current, name: event.target.value.slice(0, 40) }))} placeholder="How should EduSync greet you?" /></label>
+          <div className="preference-group"><span>Accent color</span><div className="accent-choices">{([['coral', 'Coral'], ['violet', 'Violet'], ['teal', 'Teal'], ['gold', 'Gold']] as const).map(([value, label]) => <button key={value} className={`accent-choice ${value} ${preferences.accent === value ? 'selected' : ''}`} onClick={() => setPreferences((current) => ({ ...current, accent: value }))} aria-label={`Use ${label} accent`}><i />{label}</button>)}</div></div>
+          <div className="preference-group preset-group"><span>Liquid glass preset</span><div className="preset-choices">{([['crystal', 'Crystal'], ['frosted', 'Frosted'], ['deep', 'Deep'], ['liquid', 'Liquid'], ['minimal', 'Minimal']] as const).map(([value, label]) => <button key={value} className={preferences.preset === value ? 'selected' : ''} onClick={() => setPreferences((current) => ({ ...current, preset: value, ...appearancePresets[value] }))}>{label}</button>)}</div></div>
+        </div>
+        <div className="appearance-sliders">
+          <RangeControl label="Glass transparency" value={Math.round(preferences.glassOpacity * 100)} min={5} max={95} suffix="%" onChange={(value) => setPreferences((current) => ({ ...current, preset: 'frosted', glassOpacity: value / 100 }))} />
+          <RangeControl label="Background blur" value={preferences.blur} min={0} max={40} suffix="px" onChange={(value) => setPreferences((current) => ({ ...current, preset: 'frosted', blur: value }))} />
+          <RangeControl label="Reflections" value={Math.round(preferences.reflection * 100)} min={0} max={100} suffix="%" onChange={(value) => setPreferences((current) => ({ ...current, preset: 'frosted', reflection: value / 100 }))} />
+          <RangeControl label="Shadow depth" value={Math.round(preferences.depth * 100)} min={0} max={100} suffix="%" onChange={(value) => setPreferences((current) => ({ ...current, preset: 'frosted', depth: value / 100 }))} />
+        </div>
+        <div className="appearance-actions"><label className="switch-row"><input type="checkbox" checked={preferences.tilt} onChange={(event) => setPreferences((current) => ({ ...current, tilt: event.target.checked }))} /><span /> Interactive depth</label><label className="switch-row"><input type="checkbox" checked={preferences.compact} onChange={(event) => setPreferences((current) => ({ ...current, compact: event.target.checked }))} /><span /> Compact spacing</label><button className="text-link" onClick={() => setPreferences(defaultPreferences)}>Reset appearance <RotateCcw size={14} /></button></div>
+      </Card>
       <div className="settings-grid-new">
         <Card>
           <div className="settings-heading"><Languages size={19} /><div><h3>Language preference</h3><p>Choose your preferred language for future localized study content.</p></div></div>
@@ -824,19 +921,21 @@ function SettingsPage({
         </Card>
       </div>
       <Card className="sessions-card">
-        <div className="card-heading"><div><span className="eyebrow">SECURITY</span><h3>Active sessions</h3></div><ShieldCheck size={19} /></div>
-        {sessions.length ? sessions.map((session) => (
-          <div className="session-row" key={session.id}><UserRound size={17} /><div><strong>{session.device}</strong><span>{session.current ? 'Current session' : `Last active ${formatDate(session.lastActiveAt)}`}</span></div>{!session.current && <button className="button button-secondary" onClick={async () => { try { await revokeSession(session.id); setSessions((current) => current.filter((item) => item.id !== session.id)); toast.success('Session signed out.'); } catch (error) { toast.error(error instanceof Error ? error.message : 'Unable to sign out.'); } }}>Sign out</button>}</div>
-        )) : <p className="muted-copy">Session management is available when the backend API is connected.</p>}
+        <div className="card-heading"><div><span className="eyebrow">PRIVACY</span><h3>Your workspace stays in this browser</h3></div><ShieldCheck size={19} /></div>
+        <p className="muted-copy">EduSync is open to everyone and does not require an account. Your subjects, notes, goals, and study time are stored locally on this device. Export a backup before clearing browser data or changing devices.</p>
       </Card>
       <Card className="danger-zone">
-        <div className="settings-heading"><ShieldAlert size={19} /><div><h3>Account safety</h3><p>Sign out other devices from the security section above. Workspace backups remain under your control.</p></div></div>
+        <div className="settings-heading"><ShieldAlert size={19} /><div><h3>Local data</h3><p>Workspace backups remain under your control.</p></div></div>
         <div className="danger-zone-note"><strong>Need to start fresh?</strong><span>Export a backup before removing local workspace data.</span></div>
-        <button className="button button-secondary" onClick={() => { if (window.confirm('Clear this browser’s cached workspace? Your cloud workspace will remain available when you sign in again.')) { localStorage.removeItem(`edusync-workspace-v4-${user.id}`); toast.success('Local cache cleared.'); window.location.reload(); } }}>Clear local cache</button>
+        <button className="button button-secondary" onClick={() => { if (window.confirm('Clear this browser’s EduSync workspace? This cannot be undone unless you exported a backup.')) { localStorage.removeItem('edusync-public-workspace-v1'); toast.success('Local workspace cleared.'); window.location.reload(); } }}>Clear local workspace</button>
       </Card>
       <FeedbackForm />
     </div>
   );
+}
+
+function RangeControl({ label, value, min, max, suffix, onChange }: { label: string; value: number; min: number; max: number; suffix: string; onChange: (value: number) => void }) {
+  return <label className="range-control"><span><b>{label}</b><output>{value}{suffix}</output></span><input type="range" min={min} max={max} value={value} onChange={(event) => onChange(Number(event.target.value))} /></label>;
 }
 
 function FeedbackForm() {
@@ -845,7 +944,7 @@ function FeedbackForm() {
   return (
     <Card className="feedback-card">
       <div className="settings-heading"><MessageCircle size={19} /><div><h3>Feedback</h3><p>Tell us what would make your study workflow clearer.</p></div></div>
-      <form onSubmit={async (event) => { event.preventDefault(); if (!message.trim() || sending) return; if (!apiConfigured) return toast.info('Feedback sending needs the backend API.'); setSending(true); try { await submitFeedback(message.trim()); toast.success('Thanks for the feedback.'); setMessage(''); } catch (error) { toast.error(error instanceof Error ? error.message : 'Could not send feedback.'); } finally { setSending(false); } }}>
+      <form onSubmit={(event) => { event.preventDefault(); if (!message.trim() || sending) return; setSending(true); window.location.href = `mailto:meetsharma0702@gmail.com?subject=${encodeURIComponent('EduSync feedback')}&body=${encodeURIComponent(message.trim())}`; setMessage(''); setSending(false); toast.success('Your email client is ready with your feedback.'); }}>
         <input value={message} onChange={(event) => setMessage(event.target.value)} placeholder="What should we improve?" />
         <button className="button button-primary" disabled={sending}><Send size={15} /> {sending ? 'Sending…' : 'Send feedback'}</button>
       </form>
@@ -916,15 +1015,19 @@ function SubjectWorkbench({
   const [title, setTitle] = useState('');
   const [url, setUrl] = useState('');
   const [tab, setTab] = useState<'lessons' | 'notes'>('lessons');
+  const [watchingId, setWatchingId] = useState<string | null>(null);
+  const watching = subject.lectures.find((lecture) => lecture.id === watchingId);
 
   const addLecture = (event: FormEvent) => {
     event.preventDefault();
     if (!title.trim() || !url.trim()) return toast.error('Add a lesson title and link.');
-    try { new URL(url); } catch { return toast.error('Use a complete URL such as https://youtube.com/...'); }
+    const parsed = parseYouTubeUrl(url);
+    if (!parsed) return toast.error('Use a supported HTTPS YouTube URL (watch, youtu.be, embed, or shorts).');
+    if (subject.lectures.some((item) => parseYouTubeUrl(item.url)?.videoId === parsed.videoId)) return toast.error('This video is already in this subject.');
     const lecture: Lecture = {
       id: makeId('lecture'),
       title: title.trim(),
-      url: url.trim(),
+      url: parsed.canonicalUrl,
       duration: 'New',
       channel: 'Learning resource',
       status: 'not_started',
@@ -932,6 +1035,7 @@ function SubjectWorkbench({
       bookmarked: false,
       tags: [],
       note: '',
+      youtubeId: parsed.videoId,
     };
     updateSubject({ ...subject, lectures: [...subject.lectures, lecture] });
     setTitle('');
@@ -946,18 +1050,19 @@ function SubjectWorkbench({
         <div className="workbench-progress"><b>{subjectProgress(subject)}%</b><span>complete</span></div>
       </div>
       <div className="workbench-tabs"><button className={tab === 'lessons' ? 'selected' : ''} onClick={() => setTab('lessons')}>Lessons <span>{subject.lectures.length}</span></button><button className={tab === 'notes' ? 'selected' : ''} onClick={() => setTab('notes')}>Lesson notes</button></div>
+      {watching && <VideoPlayer lecture={watching} onProgress={(lecture) => updateLecture(subject.id, lecture)} />}
       {tab === 'lessons' ? (
         <>
           <form className="add-lesson-form" onSubmit={addLecture}>
             <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Lesson title" />
-            <input value={url} onChange={(event) => setUrl(event.target.value)} placeholder="YouTube or course link" />
+            <input value={url} onChange={(event) => setUrl(event.target.value)} placeholder="YouTube URL" />
             <button className="button button-primary"><Plus size={15} /> Add lesson</button>
           </form>
           <div className="lecture-list-new">
             {subject.lectures.map((lecture) => (
               <article className="lecture-row-new" key={lecture.id}>
                 <div className="lecture-thumb-new">{getYoutubeThumbnail(lecture.url) ? <img src={getYoutubeThumbnail(lecture.url)} alt="" /> : <Play size={17} />}</div>
-                <button className="lecture-info lecture-open" onClick={() => openLecture(lecture.url)} aria-label={`Open ${lecture.title}`}><strong>{lecture.title}</strong><span>{lecture.channel} · {lecture.duration}</span><div className="tag-row">{lecture.tags.map((tag) => <i key={tag}>{tag}</i>)}</div></button>
+                <button className="lecture-info lecture-open" onClick={() => setWatchingId(lecture.id)} aria-label={`Watch ${lecture.title}`}><strong>{lecture.title}</strong><span>{lecture.channel} · {lecture.duration}{lecture.progressPercent ? ` · ${lecture.progressPercent}% watched` : ''}</span><div className="tag-row">{lecture.tags.map((tag) => <i key={tag}>{tag}</i>)}</div></button>
                 <button className={`status-button ${lecture.status}`} onClick={() => updateLecture(subject.id, { ...lecture, status: cycleLectureStatus(lecture.status) })}>{lecture.status.replace('_', ' ')}</button>
                 <button className="icon-button" onClick={() => updateLecture(subject.id, { ...lecture, favorite: !lecture.favorite })} aria-label="Favorite"><Heart size={16} fill={lecture.favorite ? 'currentColor' : 'none'} /></button>
                 <button className="icon-button" onClick={() => updateLecture(subject.id, { ...lecture, bookmarked: !lecture.bookmarked })} aria-label="Bookmark"><Bookmark size={16} fill={lecture.bookmarked ? 'currentColor' : 'none'} /></button>
@@ -1037,6 +1142,17 @@ function NewTaskModal({ subjects, onClose, onCreate }: { subjects: Subject[]; on
   </form></Modal>;
 }
 
+function ContactModal({ onClose }: { onClose: () => void }) {
+  const [message, setMessage] = useState('');
+  return <Modal title="Contact EduSync" onClose={onClose}>
+    <form className="modal-form" onSubmit={(event) => { event.preventDefault(); if (!message.trim()) return toast.error('Write a short message first.'); window.location.href = `mailto:meetsharma0702@gmail.com?subject=${encodeURIComponent('EduSync enquiry')}&body=${encodeURIComponent(message.trim())}`; toast.success('Your email client is ready.'); onClose(); }}>
+      <p className="contact-intro">Need help, want to share an idea, or found an issue? Send the EduSync team a message.</p>
+      <label>Your message<textarea autoFocus value={message} onChange={(event) => setMessage(event.target.value)} placeholder="How can we help?" /></label>
+      <button className="button button-primary"><Send size={15} /> Start email</button>
+    </form>
+  </Modal>;
+}
+
 function Modal({ title, children, onClose, wide = false }: { title: string; children: ReactNode; onClose: () => void; wide?: boolean }) {
   return <div className="modal-backdrop" onMouseDown={onClose}><motion.section className={`modal ${wide ? 'modal-wide' : ''}`} role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()} initial={{ opacity: 0, y: 12, scale: .98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 12, scale: .98 }}>
     <header><div><span className="eyebrow">EDUSYNC</span><h2>{title}</h2></div><button className="icon-button" onClick={onClose} aria-label="Close"><X size={19} /></button></header>{children}
@@ -1088,7 +1204,7 @@ function StudyAssistant({ open, close, data }: { open: boolean; close: () => voi
 }
 
 function FocusOverlay({ close, onFinish }: { close: () => void; onFinish: (minutes: number) => void }) {
-  return <div className="focus-overlay"><button className="focus-exit" onClick={close}><X size={17} /> Exit focus</button><div className="focus-center"><div className="focus-symbol"><GraduationCap size={28} /></div><span className="eyebrow">FOCUS MODE</span><h1>Give one thing your full attention.</h1><p>25 minutes of deliberate study. No pressure to do more.</p><FocusTimer onFinish={onFinish} /></div></div>;
+  return <div className="focus-overlay"><button className="focus-exit" onClick={close}><X size={17} /> Exit focus</button><div className="focus-center"><div className="focus-symbol"><GraduationCap size={28} /></div><span className="eyebrow">FOCUS MODE</span><h1>Give one thing your full attention.</h1><p>Set a session length that works for you, then study without the noise.</p><FocusTimer onFinish={onFinish} /></div></div>;
 }
 
 function ErrorBoundary({ children }: { children: ReactNode }) {
@@ -1103,15 +1219,13 @@ class ErrorBoundaryImpl extends Component<{ children: ReactNode }, { hasError: b
   }
 }
 
-function Workspace({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
+function Workspace({ user }: { user: AuthUser }) {
   const blankWorkspace: WorkspaceData = { ...seedWorkspace, subjects: [], tasks: [], notes: [], goals: [], activity: [], studyHistory: [], studiedTodayMinutes: 0 };
-  const [data, setData] = useLocalStorage<WorkspaceData>(`edusync-workspace-v4-${user.id}`, user.role === 'admin' ? seedWorkspace : blankWorkspace);
-  const [remoteReady, setRemoteReady] = useState(false);
-  const [syncing, setSyncing] = useState(false);
-  const [syncError, setSyncError] = useState(false);
+  const [data, setData] = useLocalStorage<WorkspaceData>('edusync-public-workspace-v1', blankWorkspace);
   const [active, setActive] = useState<View>(user.role === 'admin' ? 'Admin' : 'Dashboard');
   const [menuOpen, setMenuOpen] = useState(false);
   const [dark, setDark] = useLocalStorage('edusync-theme-dark', false);
+  const [preferences, setPreferences] = useLocalStorage<Preferences>('edusync-preferences-v1', defaultPreferences);
   const [modal, setModal] = useState<ModalName>(null);
   const [selectedSubjectId, setSelectedSubjectId] = useState<string | null>(null);
   const [assistantOpen, setAssistantOpen] = useState(false);
@@ -1124,26 +1238,30 @@ function Workspace({ user, onLogout }: { user: AuthUser; onLogout: () => void })
   }, [dark, data.language]);
 
   useEffect(() => {
-    let cancelled = false;
-    loadWorkspace().then((remote) => {
-      if (cancelled) return;
-      if (remote) setData(normalizeWorkspace(remote));
-      else setData((current) => normalizeWorkspace(current));
-      setRemoteReady(true);
-    }).catch(() => {
-      if (!cancelled) { setSyncError(true); setRemoteReady(true); }
-    });
-    return () => { cancelled = true; };
-  }, [user.id]);
-
-  useEffect(() => {
-    if (!remoteReady) return;
-    const timer = window.setTimeout(() => {
-      setSyncing(true);
-      persistWorkspace(data).then(() => setSyncError(false)).catch(() => setSyncError(true)).finally(() => setSyncing(false));
-    }, 650);
-    return () => window.clearTimeout(timer);
-  }, [data, remoteReady]);
+    const root = document.documentElement;
+    const accents = dark ? {
+      coral: ['#ff8766', '#ffab91', '#3e2528'],
+      violet: ['#a89cff', '#c2bbff', '#2c294b'],
+      teal: ['#5ed5c3', '#87e7d7', '#173d3a'],
+      gold: ['#f3b35b', '#ffd08b', '#42331c'],
+    } : {
+      coral: ['#f16d45', '#d95631', '#fff0eb'],
+      violet: ['#7c6cf2', '#6252d4', '#efedff'],
+      teal: ['#129b8d', '#08766b', '#e2f7f3'],
+      gold: ['#d58a19', '#ab6810', '#fff4dd'],
+    } as const;
+    const [accent, strong, soft] = accents[preferences.accent];
+    root.style.setProperty('--accent', accent);
+    root.style.setProperty('--accent-strong', strong);
+    root.style.setProperty('--accent-soft', soft);
+    root.style.setProperty('--accent-glow', `${accent}33`);
+    root.style.setProperty('--glass-opacity', String(preferences.glassOpacity));
+    root.style.setProperty('--glass-blur', `${preferences.blur}px`);
+    root.style.setProperty('--reflection-strength', String(preferences.reflection));
+    root.style.setProperty('--shadow-depth', String(preferences.depth));
+    root.dataset.glassTilt = preferences.tilt ? 'on' : 'off';
+    root.classList.toggle('compact-ui', preferences.compact);
+  }, [preferences, dark]);
 
   useEffect(() => {
     const keyHandler = (event: KeyboardEvent) => {
@@ -1242,23 +1360,24 @@ function Workspace({ user, onLogout }: { user: AuthUser; onLogout: () => void })
   };
 
   const selectedSubject = data.subjects.find((subject) => subject.id === selectedSubjectId);
+  const displayUser = { ...user, fullName: preferences.name.trim() || user.fullName };
 
   const page = useMemo(() => ({
-    Dashboard: <Dashboard data={data} user={user} setActive={setActive} openSubject={openSubject} openNewSubject={() => setModal('new-subject')} setFocusMode={setFocusMode} addMinutes={addMinutes} />,
+    Dashboard: <Dashboard data={data} user={displayUser} setActive={setActive} openSubject={openSubject} openNewSubject={() => setModal('new-subject')} setFocusMode={setFocusMode} addMinutes={addMinutes} />,
     'My subjects': <SubjectsPage data={data} openSubject={openSubject} openNewSubject={() => setModal('new-subject')} togglePin={(id) => update((current) => ({ ...current, subjects: current.subjects.map((subject) => subject.id === id ? { ...subject, pinned: !subject.pinned } : subject) }))} deleteSubject={deleteSubject} />,
     Planner: <PlannerPage data={data} setActive={setActive} openNewTask={() => setModal('new-task')} />,
     Tasks: <TasksPage data={data} toggleTask={updateTask} deleteTask={(id) => update((current) => ({ ...current, tasks: current.tasks.filter((task) => task.id !== id) }))} openNewTask={() => setModal('new-task')} />,
     Notes: <NotesPage data={data} updateNote={updateNote} newNote={newNote} deleteNote={deleteNote} onVideoSummary={saveVideoSummary} />,
     Analytics: <AnalyticsPage data={data} />,
     Library: <LibraryPage data={data} updateLecture={updateLecture} />,
-    Settings: <SettingsPage data={data} setData={setData} user={user} onExport={exportData} onImport={importData} />,
-    Admin: user.role === 'admin' ? <AdminPage /> : <Dashboard data={data} user={user} setActive={setActive} openSubject={openSubject} openNewSubject={() => setModal('new-subject')} setFocusMode={setFocusMode} addMinutes={addMinutes} />,
-  } as Record<View, ReactNode>)[active], [active, data, selectedSubjectId, user.id]);
+    Settings: <SettingsPage data={data} setData={setData} preferences={preferences} setPreferences={setPreferences} onExport={exportData} onImport={importData} />,
+    Admin: <Dashboard data={data} user={displayUser} setActive={setActive} openSubject={openSubject} openNewSubject={() => setModal('new-subject')} setFocusMode={setFocusMode} addMinutes={addMinutes} />,
+  } as Record<View, ReactNode>)[active], [active, data, selectedSubjectId, displayUser.fullName, preferences]);
 
   return <ErrorBoundary><div className="app-shell">
-    <Sidebar user={user} active={active} setActive={setActive} collapsed={menuOpen} onClose={() => setMenuOpen(false)} onLogout={onLogout} />
+    <Sidebar active={active} setActive={setActive} collapsed={menuOpen} onClose={() => setMenuOpen(false)} onContact={() => setModal('contact')} />
     <main className="main-content">
-      <Header user={user} onMenu={() => setMenuOpen(true)} dark={dark} toggleDark={() => setDark((value) => !value)} openCommand={() => setCommandOpen(true)} setActive={setActive} syncing={syncing} syncError={syncError} />
+      <Header onMenu={() => setMenuOpen(true)} dark={dark} toggleDark={() => setDark((value) => !value)} openCommand={() => setCommandOpen(true)} setActive={setActive} active={active} syncing={false} syncError={false} />
       {page}
     </main>
     <button className="assistant-fab" onClick={() => setAssistantOpen(true)}><Sparkles size={17} /><span>Study companion</span></button>
@@ -1268,116 +1387,15 @@ function Workspace({ user, onLogout }: { user: AuthUser; onLogout: () => void })
       {modal === 'new-subject' && <NewSubjectModal onClose={() => setModal(null)} onCreate={createSubject} />}
       {modal === 'new-task' && <NewTaskModal subjects={data.subjects} onClose={() => setModal(null)} onCreate={createTask} />}
       {modal === 'subject' && selectedSubject && <SubjectWorkbench subject={selectedSubject} onClose={() => setModal(null)} updateSubject={updateSubject} deleteSubject={deleteSubject} updateLecture={updateLecture} onVideoSummary={saveVideoSummary} />}
+      {modal === 'contact' && <ContactModal onClose={() => setModal(null)} />}
     </AnimatePresence>
     {focusMode && <FocusOverlay close={() => setFocusMode(false)} onFinish={addMinutes} />}
   </div></ErrorBoundary>;
 }
 
-function passwordChecks(password: string) {
-  return [
-    ['8+ characters', password.length >= 8],
-    ['Uppercase letter', /[A-Z]/.test(password)],
-    ['Lowercase letter', /[a-z]/.test(password)],
-    ['A number', /\d/.test(password)],
-    ['Special character', /[^A-Za-z0-9]/.test(password)],
-  ] as const;
-}
-
-function AuthScreen({ onAuthenticated }: { onAuthenticated: (user: AuthUser) => void }) {
-  const resetToken = new URLSearchParams(window.location.search).get('resetToken');
-  const [mode, setMode] = useState<'sign-in' | 'sign-up' | 'forgot' | 'reset'>(resetToken ? 'reset' : 'sign-in');
-  const [portal, setPortal] = useState<'student' | 'admin'>('student');
-  const [fullName, setFullName] = useState('');
-  const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [acceptedTerms, setAcceptedTerms] = useState(false);
-  const [resetEmail, setResetEmail] = useState('');
-  const [loading, setLoading] = useState(false);
-  const checks = passwordChecks(password);
-  const strength = checks.filter(([, ok]) => ok).length;
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    if (mode === 'forgot') {
-      if (!resetEmail) return toast.error('Enter your email.');
-      setLoading(true);
-      try { const result = await requestPasswordReset(resetEmail); toast.success(result.message); setMode('sign-in'); }
-      catch (error) { toast.error(error instanceof Error ? error.message : 'Unable to request reset.'); }
-      finally { setLoading(false); }
-      return;
-    }
-    if (mode === 'reset') {
-      if (!resetToken || strength < 5 || password !== confirmPassword) return toast.error('Meet every password requirement and match both passwords.');
-      setLoading(true);
-      try { const result = await resetPassword({ token: resetToken, password, confirmPassword }); toast.success(result.message); window.history.replaceState({}, '', window.location.pathname); setMode('sign-in'); setPassword(''); setConfirmPassword(''); }
-      catch (error) { toast.error(error instanceof Error ? error.message : 'Unable to reset password.'); }
-      finally { setLoading(false); }
-      return;
-    }
-    if (mode === 'sign-up' && (!acceptedTerms || strength < 5 || password !== confirmPassword)) return toast.error(!acceptedTerms ? 'Please accept the terms.' : password !== confirmPassword ? 'Passwords do not match.' : 'Meet every password requirement.');
-    setLoading(true);
-    try {
-      const user = mode === 'sign-up'
-        ? await createAccount({ fullName, email, phone, password })
-        : await signIn({ email, password, portal });
-      saveSession(user);
-      onAuthenticated(user);
-      toast.success(mode === 'sign-up' ? 'Your learning space is ready.' : `Welcome back, ${user.fullName.split(' ')[0]}.`);
-    } catch (error) { toast.error(error instanceof Error ? error.message : 'Unable to continue.'); }
-    finally { setLoading(false); }
-  };
-  const isSignup = mode === 'sign-up';
-  const isForgot = mode === 'forgot';
-  const isReset = mode === 'reset';
-  return <main className="auth-page">
-    <section className="auth-showcase">
-      <div className="auth-brand"><span className="brand-mark"><GraduationCap size={22} /></span><strong>EduSync</strong></div>
-      <div className="auth-showcase-copy"><span className="eyebrow">STUDY WITH INTENTION</span><h1>Your study life, <em>in one clear place.</em></h1><p>Plan what matters, learn from your lessons, keep useful notes, and see your progress without the noise.</p></div>
-      <div className="auth-feature-stack">
-        <div><span><Target size={17} /></span><div><strong>Know what to do next</strong><small>Tasks, deadlines and a simple daily focus.</small></div></div>
-        <div><span><BookOpen size={17} /></span><div><strong>Build your learning spaces</strong><small>Lessons, bookmarks, notes and progress in one place.</small></div></div>
-        <div><span><LineChart size={17} /></span><div><strong>Reflect, don't obsess</strong><small>Use your study data to improve the next week.</small></div></div>
-      </div>
-      <div className="auth-orbit one" /><div className="auth-orbit two" />
-    </section>
-    <section className="auth-panel">
-      <div className="auth-top"><span>{portal === 'admin' ? 'ADMIN PORTAL' : isSignup ? 'CREATE ACCOUNT' : isForgot ? 'ACCOUNT RECOVERY' : isReset ? 'PASSWORD RESET' : 'WELCOME BACK'}</span><button onClick={() => { setPortal(portal === 'student' ? 'admin' : 'student'); setMode('sign-in'); }}>{portal === 'student' ? 'Administrator sign in' : 'Student sign in'}</button></div>
-      <div className="auth-form-wrap">
-        <div className="auth-heading"><h2>{isForgot ? 'Recover your account.' : isReset ? 'Choose a new password.' : isSignup ? 'Start with a clear workspace.' : portal === 'admin' ? 'Manage EduSync securely.' : 'Welcome back.'}</h2><p>{isForgot ? 'We will send a secure reset link if the account exists.' : isReset ? 'This link is time-limited for security.' : isSignup ? 'Create your student workspace and make your first plan.' : portal === 'admin' ? 'Use your administrator credentials.' : 'Sign in to continue your study plan.'}</p></div>
-        <form className="auth-form" onSubmit={submit}>
-          {isSignup && <label>Full name<input autoComplete="name" value={fullName} onChange={(event) => setFullName(event.target.value)} placeholder="Your full name" required /></label>}
-          {isSignup && <label>Phone number<input autoComplete="tel" value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="+91 98765 43210" required /></label>}
-          {isForgot ? <label>Email address<input type="email" value={resetEmail} onChange={(event) => setResetEmail(event.target.value)} placeholder="you@example.com" required /></label> : <label>Email address<input autoComplete="email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" required /></label>}
-          {!isForgot && <label>Password<input autoComplete={isSignup || isReset ? 'new-password' : 'current-password'} type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Enter your password" required /></label>}
-          {(isSignup || isReset) && <><div className="password-meter"><span>Password strength</span><b>{strength === 5 ? 'Strong' : strength >= 3 ? 'Almost there' : 'Needs work'}</b><i><u style={{ width: `${strength * 20}%` }} /></i></div><ul className="password-checks">{checks.map(([label, ok]) => <li className={ok ? 'pass' : ''} key={label}>{ok ? <Check size={13} /> : <Circle size={10} />}{label}</li>)}</ul><label>Confirm password<input type="password" autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="Repeat your password" required /></label></>}
-          {isSignup && <label className="terms-check"><input type="checkbox" checked={acceptedTerms} onChange={(event) => setAcceptedTerms(event.target.checked)} /> I agree to the Terms of Service and Privacy Policy.</label>}
-          {!isSignup && !isForgot && !isReset && <button type="button" className="text-link auth-forgot" onClick={() => setMode('forgot')}>Forgot password?</button>}
-          <button className="auth-submit" disabled={loading}>{loading ? 'Please wait…' : isSignup ? 'Create account' : isForgot ? 'Send reset link' : isReset ? 'Reset password' : portal === 'admin' ? 'Sign in to admin' : 'Sign in'} <ArrowRight size={17} /></button>
-        </form>
-        {!isForgot && !isReset && <p className="auth-switch">{isSignup ? 'Already have an account?' : 'New to EduSync?'} <button onClick={() => { setMode(isSignup ? 'sign-in' : 'sign-up'); setPortal('student'); }}>{isSignup ? 'Sign in' : 'Create account'}</button></p>}
-        {!apiConfigured && portal === 'admin' && !isSignup && !isForgot && !isReset && <button className="preview-admin" onClick={async () => { const adminEmail = window.prompt('Admin email'); if (!adminEmail) return; const adminPassword = window.prompt('Admin password (8+ chars, upper/lower/number/special)'); if (!adminPassword) return; try { await createDemoAdmin(adminEmail, adminPassword); toast.success('Local admin created. Sign in now.'); setMode('sign-in'); } catch (error) { toast.error(error instanceof Error ? error.message : 'Unable to create local admin.'); } }}>Create local admin for preview</button>}
-        {(isForgot || isReset) && <p className="auth-switch"><button onClick={() => { setMode('sign-in'); window.history.replaceState({}, '', window.location.pathname); }}>Back to sign in</button></p>}
-        {!apiConfigured && <p className="deployment-note"><ShieldCheck size={14} /> Preview mode: connect <code>VITE_API_URL</code> for secure account persistence.</p>}
-      </div>
-    </section>
-  </main>;
-}
-
 function App() {
-  const [session, setSession] = useState<AuthUser | null>(() => readSession());
-  const [checking, setChecking] = useState(apiConfigured);
-  useEffect(() => {
-    const token = new URLSearchParams(window.location.search).get('token');
-    if (token && apiConfigured) verifyEmail(token).then((result) => toast.success(result.message)).catch((error) => toast.error(error instanceof Error ? error.message : 'Verification failed.')).finally(() => window.history.replaceState({}, '', window.location.pathname));
-  }, []);
-  useEffect(() => {
-    if (!apiConfigured) return;
-    getCurrentUser().then((user) => { setSession(user); setChecking(false); });
-  }, []);
-  if (checking) return <main className="loading-screen"><div className="brand-mark"><GraduationCap size={25} /></div><h2>Restoring your study space…</h2><p>Checking your secure session.</p></main>;
-  const logout = async () => { await signOut(); clearSession(); setSession(null); toast.info('Signed out.'); };
-  return session ? <Workspace key={session.id} user={session} onLogout={logout} /> : <AuthScreen onAuthenticated={(user) => { saveSession(user); setSession(user); }} />;
+  const visitor: AuthUser = { id: 'public-visitor', fullName: 'Study guest', email: '', phone: '', role: 'student', isEmailVerified: false };
+  return <Workspace user={visitor} />;
 }
 
 export default App;

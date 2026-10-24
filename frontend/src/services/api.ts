@@ -10,13 +10,16 @@ async function request<T>(path: string, options: RequestInit = {}) {
 }
 export const apiConfigured = Boolean(apiBase);
 export async function loadWorkspace() {
+  if (!apiBase) return null;
   const result = await request<{ workspace: WorkspaceData | null }>('/workspace');
   return result.workspace;
 }
 export async function persistWorkspace(data: WorkspaceData) {
-  await request('/api/workspace', { method: 'PUT', body: JSON.stringify(data) });
+  if (!apiBase) return;
+  await request('/workspace', { method: 'PUT', body: JSON.stringify(data) });
 }
 
 export async function submitFeedback(message: string) {
+  if (!apiBase) throw new Error('Feedback requires the backend API to be configured.');
   await request('/feedback', { method: 'POST', body: JSON.stringify({ message }) });
 }

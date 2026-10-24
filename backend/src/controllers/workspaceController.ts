@@ -1,11 +1,12 @@
 import type { RequestHandler } from 'express';
 import { z } from 'zod';
 import { Workspace } from '../models/Workspace.js';
+import { parseYouTubeUrl } from '../utils/youtube.js';
 
 const lectureSchema = z.object({
   id: z.string().min(1).max(100),
   title: z.string().trim().min(1).max(240),
-  url: z.string().max(2000),
+  url: z.string().max(2000).refine((value) => Boolean(parseYouTubeUrl(value)), 'Use a supported HTTPS YouTube URL.'),
   duration: z.string().max(40),
   channel: z.string().max(180),
   status: z.enum(['not_started', 'in_progress', 'completed']),
@@ -14,6 +15,12 @@ const lectureSchema = z.object({
   tags: z.array(z.string().max(80)).max(50),
   note: z.string().max(50000),
   summary: z.string().max(50000).optional(),
+  youtubeId: z.string().regex(/^[A-Za-z0-9_-]{11}$/).optional(),
+  durationSeconds: z.number().min(0).optional(),
+  lastPositionSeconds: z.number().min(0).optional(),
+  progressPercent: z.number().min(0).max(100).optional(),
+  lastWatchedAt: z.coerce.date().optional(),
+  completedAt: z.coerce.date().optional(),
 });
 
 const subjectSchema = z.object({
@@ -76,6 +83,18 @@ export const getWorkspace: RequestHandler = async (req, res) => {
 
 export const saveWorkspace: RequestHandler = async (req, res) => {
   const input = workspaceSchema.parse(req.body);
+  for (const subject of input.subjects) for (const lecture of subject.lectures) {
+    const parsed = parseYouTubeUrl(lecture.url);
+    if (!parsed) return res.status(422).json({ message: 'One or more videos use an unsupported YouTube URL.' });
+    lecture.url = parsed.canonicalUrl;
+    lecture.youtubeId = parsed.videoId;
+    if (lecture.durationSeconds && lecture.lastPositionSeconds)
+      lecture.progressPercent = Math.min(100, Math.round((lecture.lastPositionSeconds / lecture.durationSeconds) * 100));
+    if (lecture.progressPercent && lecture.progressPercent >= 90 && lecture.status !== 'completed') {
+      lecture.status = 'completed';
+      lecture.completedAt ??= new Date();
+    }
+  }
   const workspace = await Workspace.findOneAndUpdate(
     { owner: req.auth!.sub },
     { $set: input, $setOnInsert: { owner: req.auth!.sub } },

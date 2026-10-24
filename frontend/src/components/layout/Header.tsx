@@ -1,9 +1,7 @@
 import { Bell, CheckCircle2, Menu, Moon, Search, Settings, Sun, AlertCircle } from 'lucide-react';
 import { toast } from 'react-toastify';
-import { Avatar } from '../common/Avatar';
 import { IconButton } from '../common/IconButton';
 import type { View } from '../../types/navigation';
-import type { AuthUser } from '../../services/auth';
 
 export function Header({
   onMenu,
@@ -11,7 +9,7 @@ export function Header({
   toggleDark,
   openCommand,
   setActive,
-  user,
+  active,
   syncing,
   syncError,
 }: {
@@ -20,7 +18,7 @@ export function Header({
   toggleDark: () => void;
   openCommand: () => void;
   setActive: (view: View) => void;
-  user: AuthUser;
+  active: View;
   syncing: boolean;
   syncError: boolean;
 }) {
@@ -34,10 +32,13 @@ export function Header({
         <span>Search or jump to a page</span>
         <kbd>⌘ K</kbd>
       </button>
+      <nav className="top-links" aria-label="Dashboard sections">
+        {(['Dashboard', 'My subjects', 'Planner', 'Analytics'] as View[]).map((view) => <button key={view} className={active === view ? 'active' : ''} onClick={() => setActive(view)}>{view === 'My subjects' ? 'Subjects' : view}</button>)}
+      </nav>
       <div className={`sync-status ${syncError ? 'error' : ''}`}>
         {syncError ? <AlertCircle size={13} /> : <CheckCircle2 size={13} />}
         <i />
-        {syncError ? 'Sync needs attention' : syncing ? 'Saving…' : 'Saved'}
+        {syncError ? 'Save needs attention' : syncing ? 'Saving…' : 'Saved on this device'}
       </div>
       <div className="header-actions">
         <IconButton label="Open settings" onClick={() => setActive('Settings')}>
@@ -49,7 +50,6 @@ export function Header({
         <IconButton label="Notifications" onClick={() => toast('You’re all caught up.')}>
           <Bell size={18} />
         </IconButton>
-        <Avatar className="top-avatar" name={user.fullName} />
       </div>
     </header>
   );

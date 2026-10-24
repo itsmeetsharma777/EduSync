@@ -1,6 +1,7 @@
 import type { RequestHandler } from 'express';
 import { z } from 'zod';
 import { Subject } from '../models/Subject.js';
+import { parseYouTubeUrl } from '../utils/youtube.js';
 
 const subjectSchema = z.object({
   name: z.string().trim().min(1).max(100),
@@ -14,7 +15,7 @@ const subjectSchema = z.object({
 });
 const lectureSchema = z.object({
   title: z.string().trim().min(1).max(180),
-  youtubeUrl: z.string().url(),
+  youtubeUrl: z.string().max(2000).refine((value) => Boolean(parseYouTubeUrl(value)), 'Use a supported HTTPS YouTube URL.'),
   notes: z.string().max(10_000).optional(),
   tags: z.array(z.string().trim().max(30)).max(12).optional(),
   priority: z.enum(['low', 'medium', 'high']).optional(),
@@ -39,10 +40,13 @@ export const addLecture: RequestHandler = async (req, res) => {
   const input = lectureSchema.parse(req.body);
   const subject = await Subject.findOne({ _id: req.params.subjectId, owner: req.auth!.sub });
   if (!subject) return res.status(404).json({ message: 'Subject not found.' });
-  const videoId = new URL(input.youtubeUrl).searchParams.get('v') ?? input.youtubeUrl.split('/').pop();
+  const parsed = parseYouTubeUrl(input.youtubeUrl)!;
+  const duplicate = subject.lectures.some((lecture) => lecture.youtubeUrl === parsed.canonicalUrl);
+  if (duplicate) return res.status(409).json({ message: 'This video is already in the subject.' });
   subject.lectures.push({
     ...input,
-    thumbnailUrl: videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : undefined,
+    youtubeUrl: parsed.canonicalUrl,
+    thumbnailUrl: `https://i.ytimg.com/vi/${parsed.videoId}/hqdefault.jpg`,
   });
   await subject.save();
   return res.status(201).json({ lecture: subject.lectures.at(-1) });

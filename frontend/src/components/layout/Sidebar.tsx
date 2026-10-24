@@ -1,26 +1,20 @@
-import { GraduationCap, LogOut, ShieldCheck, X } from 'lucide-react';
-import { Avatar } from '../common/Avatar';
-import { IconButton } from '../common/IconButton';
+import { GraduationCap, Mail, X } from 'lucide-react';
 import { nav } from '../../config/navigation';
 import type { View } from '../../types/navigation';
-import type { AuthUser } from '../../services/auth';
 
 export function Sidebar({
   active,
   setActive,
   collapsed,
   onClose,
-  user,
-  onLogout,
+  onContact,
 }: {
   active: View;
   setActive: (view: View) => void;
   collapsed: boolean;
   onClose: () => void;
-  user: AuthUser;
-  onLogout: () => void;
+  onContact: () => void;
 }) {
-  const items = user.role === 'admin' ? [...nav, { label: 'Admin' as View, icon: ShieldCheck }] : nav;
   return (
     <aside className={`sidebar ${collapsed ? 'sidebar-open' : ''}`} aria-label="Primary navigation">
       <div className="brand">
@@ -28,13 +22,12 @@ export function Sidebar({
         <strong>EduSync</strong>
         <button className="mobile-close" aria-label="Close navigation" onClick={onClose}><X size={19} /></button>
       </div>
-      <div className="workspace-label">{user.role === 'admin' ? 'ADMINISTRATION' : 'STUDY WORKSPACE'}</div>
+      <div className="workspace-label">OPEN STUDY WORKSPACE</div>
       <nav>
-        {items.map(({ label, icon: Icon }) => (
-          <button key={label} className={`nav-item ${active === label ? 'active' : ''}`} onClick={() => { setActive(label); onClose(); }}>
+        {nav.map(({ label, icon: Icon }) => (
+          <button key={label} title={label} aria-label={label} className={`nav-item ${active === label ? 'active' : ''}`} onClick={() => { setActive(label); onClose(); }}>
             <Icon size={17} />
             <span>{label}</span>
-            {label === 'Tasks' && <i className="nav-dot" />}
           </button>
         ))}
       </nav>
@@ -44,14 +37,7 @@ export function Sidebar({
         <p>Make the next action small enough that you can start it now.</p>
         <button onClick={() => setActive('Planner')}>Open planner →</button>
       </div>
-      <div className="profile-menu">
-        <Avatar name={user.fullName} />
-        <div>
-          <strong>{user.fullName}</strong>
-          <span>{user.role === 'admin' ? 'Administrator' : user.isEmailVerified ? 'Verified student' : 'Email not verified'}</span>
-        </div>
-        <IconButton label="Sign out" onClick={onLogout}><LogOut size={16} /></IconButton>
-      </div>
+      <div className="profile-menu developer-credit"><button className="contact-button" onClick={onContact}><Mail size={15} /><span>Contact us</span></button></div>
     </aside>
   );
 }

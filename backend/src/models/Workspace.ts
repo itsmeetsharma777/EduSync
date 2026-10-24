@@ -12,6 +12,12 @@ const lectureSchema = new Schema({
   tags: { type: [String], default: [] },
   note: { type: String, default: '', maxlength: 50000 },
   summary: { type: String, maxlength: 50000 },
+  youtubeId: { type: String, match: /^[A-Za-z0-9_-]{11}$/ },
+  durationSeconds: { type: Number, min: 0 },
+  lastPositionSeconds: { type: Number, min: 0, default: 0 },
+  progressPercent: { type: Number, min: 0, max: 100, default: 0 },
+  lastWatchedAt: Date,
+  completedAt: Date,
 }, { _id: false });
 
 const subjectSchema = new Schema({
