@@ -1,7 +1,9 @@
-import { Bell, CheckCircle2, Menu, Moon, Search, Settings, Sun, AlertCircle } from 'lucide-react';
-import { toast } from 'react-toastify';
+import { Bell, Check, CheckCircle2, Menu, Moon, Search, Settings, Sun, AlertCircle } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import { IconButton } from '../common/IconButton';
 import type { View } from '../../types/navigation';
+
+export type AppNotification = { id: string; title: string; body: string; createdAt: string; read: boolean; tone?: 'focus' | 'task' | 'win' };
 
 export function Header({
   onMenu,
@@ -12,6 +14,8 @@ export function Header({
   active,
   syncing,
   syncError,
+  notifications,
+  markAllRead,
 }: {
   onMenu: () => void;
   dark: boolean;
@@ -21,7 +25,20 @@ export function Header({
   active: View;
   syncing: boolean;
   syncError: boolean;
+  notifications: AppNotification[];
+  markAllRead: () => void;
 }) {
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const notificationRef = useRef<HTMLDivElement>(null);
+  const unread = notifications.filter((notification) => !notification.read).length;
+  useEffect(() => {
+    if (!notificationsOpen) return;
+    const closeOnOutsidePress = (event: PointerEvent) => {
+      if (notificationRef.current && !notificationRef.current.contains(event.target as Node)) setNotificationsOpen(false);
+    };
+    window.addEventListener('pointerdown', closeOnOutsidePress);
+    return () => window.removeEventListener('pointerdown', closeOnOutsidePress);
+  }, [notificationsOpen]);
   return (
     <header className="topbar">
       <button className="mobile-menu" aria-label="Open navigation" onClick={onMenu}>
@@ -47,9 +64,16 @@ export function Header({
         <IconButton label="Toggle theme" onClick={toggleDark}>
           {dark ? <Sun size={18} /> : <Moon size={18} />}
         </IconButton>
-        <IconButton label="Notifications" onClick={() => toast('You’re all caught up.')}>
+        <div className="notification-wrap" ref={notificationRef}>
+        <IconButton label="Notifications" onClick={() => setNotificationsOpen((open) => !open)}>
           <Bell size={18} />
         </IconButton>
+        {unread > 0 && <span className="notification-badge">{unread > 9 ? '9+' : unread}</span>}
+        {notificationsOpen && <section className="notification-drawer" aria-label="Notifications">
+          <header><div><span className="eyebrow">UPDATES</span><h3>Notifications</h3></div><button className="text-link" onClick={markAllRead} disabled={!unread}><Check size={14} /> Mark all read</button></header>
+          <div className="notification-list">{notifications.length ? notifications.slice(0, 8).map((notification) => <article key={notification.id} className={!notification.read ? 'unread' : ''}><i className={notification.tone ?? 'focus'} /><div><strong>{notification.title}</strong><p>{notification.body}</p><span>{new Date(notification.createdAt).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}</span></div></article>) : <p className="notification-empty">You’re all caught up. Your helpful study updates will appear here.</p>}</div>
+        </section>}
+        </div>
       </div>
     </header>
   );

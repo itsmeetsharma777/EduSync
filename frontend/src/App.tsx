@@ -6,16 +6,18 @@ import {
   type Dispatch,
   type SetStateAction,
   useEffect,
-  useMemo,
   useRef,
   useState,
 } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   Activity,
+  Award,
   ArrowRight,
   BarChart3,
+  BatteryCharging,
   Bell,
+  Brain,
   BookOpen,
   Bookmark,
   CalendarDays,
@@ -79,7 +81,7 @@ import {
 import { toast } from 'react-toastify';
 import { Avatar } from './components/common/Avatar';
 import { Progress } from './components/common/Progress';
-import { Header } from './components/layout/Header';
+import { Header, type AppNotification } from './components/layout/Header';
 import { Sidebar } from './components/layout/Sidebar';
 import type { View } from './types/navigation';
 import { downloadFile, makeId, useLocalStorage } from './utils/storage';
@@ -108,13 +110,15 @@ type Preferences = {
   depth: number;
   tilt: boolean;
   compact: boolean;
+  fontScale: number;
+  reduceEffects: boolean;
 };
 
 const defaultPreferences: Preferences = {
-  name: '', preset: 'frosted', accent: 'coral', glassOpacity: 0.76, blur: 18, reflection: 0.42, depth: 0.5, tilt: true, compact: false,
+  name: '', preset: 'frosted', accent: 'coral', glassOpacity: 0.76, blur: 18, reflection: 0.42, depth: 0.5, tilt: true, compact: false, fontScale: 100, reduceEffects: false,
 };
 
-const appearancePresets: Record<AppearancePreset, Omit<Preferences, 'name' | 'preset' | 'accent' | 'tilt' | 'compact'>> = {
+const appearancePresets: Record<AppearancePreset, Omit<Preferences, 'name' | 'preset' | 'accent' | 'tilt' | 'compact' | 'fontScale' | 'reduceEffects'>> = {
   crystal: { glassOpacity: 0.38, blur: 12, reflection: 0.7, depth: 0.3 },
   frosted: { glassOpacity: 0.76, blur: 18, reflection: 0.42, depth: 0.5 },
   deep: { glassOpacity: 0.88, blur: 24, reflection: 0.24, depth: 0.8 },
@@ -866,6 +870,134 @@ function LibraryPage({ data, updateLecture }: { data: WorkspaceData; updateLectu
   );
 }
 
+type Flashcard = { id: string; front: string; back: string; subjectId: string; createdAt: string; lastReviewedAt?: string; dueAt?: string; interval?: number; confidence?: 'hard' | 'good' | 'easy' };
+type DailyPulse = { date: string; mood: number; energy: number; intention: string };
+type VocabularyItem = { id: string; term: string; meaning: string; subjectId: string };
+type CheatSheet = { id: string; title: string; body: string; subjectId: string };
+
+function StudyLabPage({ data }: { data: WorkspaceData }) {
+  const [cards, setCards] = useLocalStorage<Flashcard[]>('edusync-flashcards-v1', []);
+  const [pulse, setPulse] = useLocalStorage<DailyPulse | null>('edusync-daily-pulse-v1', null);
+  const [topThree, setTopThree] = useLocalStorage<string[]>('edusync-top-three-v1', ['', '', '']);
+  const [vocabulary, setVocabulary] = useLocalStorage<VocabularyItem[]>('edusync-vocabulary-v1', []);
+  const [cheatSheets, setCheatSheets] = useLocalStorage<CheatSheet[]>('edusync-cheat-sheets-v1', []);
+  const [tab, setTab] = useState<'review' | 'plan' | 'toolkit'>('review');
+  const [front, setFront] = useState('');
+  const [back, setBack] = useState('');
+  const [subjectId, setSubjectId] = useState(data.subjects[0]?.id ?? '');
+  const [reviewIndex, setReviewIndex] = useState(0);
+  const [revealed, setRevealed] = useState(false);
+  const [quizAnswer, setQuizAnswer] = useState<string | null>(null);
+  const [quizScore, setQuizScore] = useState(0);
+  const [sourceNotes, setSourceNotes] = useState('');
+  const [term, setTerm] = useState('');
+  const [meaning, setMeaning] = useState('');
+  const [sheetTitle, setSheetTitle] = useState('');
+  const [sheetBody, setSheetBody] = useState('');
+  const today = new Date().toISOString().slice(0, 10);
+  const currentCard = cards[reviewIndex % Math.max(cards.length, 1)];
+  const dueCards = cards.filter((card) => !card.dueAt || card.dueAt.slice(0, 10) <= today);
+  const quizChoices = currentCard ? [currentCard.back, ...cards.filter((card) => card.id !== currentCard.id).slice(0, 3).map((card) => card.back)].sort((a, b) => a.localeCompare(b)) : [];
+  const reviewedToday = cards.filter((card) => card.lastReviewedAt?.slice(0, 10) === today).length;
+  const completedTasks = data.tasks.filter((task) => task.done).length;
+  const focusPoints = data.studyHistory.reduce((total, entry) => total + entry.minutes, 0) + completedTasks * 10 + reviewedToday * 2;
+  const currentPulse = pulse?.date === today ? pulse : null;
+  const checkIn = (field: 'mood' | 'energy', value: number) => setPulse({ date: today, mood: currentPulse?.mood ?? 3, energy: currentPulse?.energy ?? 3, intention: currentPulse?.intention ?? '', [field]: value });
+  const saveCard = (event: FormEvent) => {
+    event.preventDefault();
+    if (!front.trim() || !back.trim()) return toast.error('Add both a question and an answer.');
+    setCards((current) => [{ id: makeId('card'), front: front.trim(), back: back.trim(), subjectId, createdAt: new Date().toISOString(), dueAt: new Date().toISOString(), interval: 0 }, ...current]);
+    setFront(''); setBack(''); setReviewIndex(0); setRevealed(false);
+    toast.success('Recall card added to your study lab.');
+  };
+  const reviewCard = (confidence: 'hard' | 'good' | 'easy' = 'good') => {
+    if (!currentCard) return;
+    const days = confidence === 'hard' ? 1 : confidence === 'easy' ? Math.max(7, (currentCard.interval ?? 1) * 2) : Math.max(3, (currentCard.interval ?? 1) + 2);
+    const nextDue = new Date(); nextDue.setDate(nextDue.getDate() + days);
+    setCards((current) => current.map((card) => card.id === currentCard.id ? { ...card, lastReviewedAt: new Date().toISOString(), dueAt: nextDue.toISOString(), interval: days, confidence } : card));
+    setReviewIndex((current) => (current + 1) % cards.length);
+    setRevealed(false); setQuizAnswer(null);
+  };
+  const importFromNotes = () => {
+    const lines = sourceNotes.split(/[\n.!?]+/).map((line) => line.trim()).filter((line) => line.length > 12).slice(0, 12);
+    if (!lines.length) return toast.error('Paste at least one complete idea from your notes.');
+    setCards((current) => [...lines.map((line) => ({ id: makeId('card'), front: `Explain: ${line.slice(0, 72)}${line.length > 72 ? '…' : ''}`, back: line, subjectId, createdAt: new Date().toISOString(), dueAt: new Date().toISOString(), interval: 0 })), ...current]);
+    setSourceNotes(''); toast.success(`${lines.length} recall cards created from your notes.`);
+  };
+  const addVocabulary = (event: FormEvent) => { event.preventDefault(); if (!term.trim() || !meaning.trim()) return; setVocabulary((current) => [{ id: makeId('word'), term: term.trim(), meaning: meaning.trim(), subjectId }, ...current]); setTerm(''); setMeaning(''); };
+  const addCheatSheet = (event: FormEvent) => { event.preventDefault(); if (!sheetTitle.trim() || !sheetBody.trim()) return; setCheatSheets((current) => [{ id: makeId('sheet'), title: sheetTitle.trim(), body: sheetBody.trim(), subjectId }, ...current]); setSheetTitle(''); setSheetBody(''); };
+  const pulseTip = currentPulse?.energy && currentPulse.energy <= 2
+    ? 'Low-energy day: choose a 10-minute review, water, and a short break before a longer block.'
+    : currentPulse?.mood && currentPulse.mood <= 2
+      ? 'Be kind to yourself today. A small completed task is enough momentum to begin.'
+      : 'You look ready to build momentum. Pick one task, set a timer, and start imperfectly.';
+
+  return <div className="page study-lab-page">
+    <PageHeader eyebrow="YOUR LEARNING PLAYGROUND" title="Study Lab" text="Turn passive notes into retrieval practice, notice your energy, and celebrate real momentum." />
+    <div className="lab-metrics">
+      <MetricCard icon={<Award size={18} />} label="Momentum points" value={String(focusPoints)} hint="Focus minutes + completed tasks + reviews" />
+      <MetricCard icon={<Brain size={18} />} label="Recall cards" value={String(cards.length)} hint={`${dueCards.length} due · ${reviewedToday} reviewed today`} />
+      <MetricCard icon={<BatteryCharging size={18} />} label="Daily readiness" value={currentPulse ? `${currentPulse.energy}/5` : '—'} hint={currentPulse ? 'Energy check-in saved' : 'Check in below'} />
+    </div>
+    <div className="lab-tabs"><button className={tab === 'review' ? 'selected' : ''} onClick={() => setTab('review')}>Recall & quiz</button><button className={tab === 'plan' ? 'selected' : ''} onClick={() => setTab('plan')}>Plan & reset</button><button className={tab === 'toolkit' ? 'selected' : ''} onClick={() => setTab('toolkit')}>Study toolkit</button></div>
+    {tab === 'review' && <><div className="lab-grid">
+      <Card className="pulse-card">
+        <div className="card-heading"><div><span className="eyebrow">DAILY PULSE</span><h3>How are you arriving?</h3></div><Heart size={19} /></div>
+        <p className="muted-copy">This stays private on this device. It helps you choose a study pace that fits today.</p>
+        <div className="pulse-scale"><span>Mood</span><div>{[1, 2, 3, 4, 5].map((value) => <button key={value} className={currentPulse?.mood === value ? 'selected' : ''} onClick={() => checkIn('mood', value)} aria-label={`Set mood to ${value} out of 5`}>{['😞', '😕', '😐', '🙂', '✨'][value - 1]}</button>)}</div></div>
+        <div className="pulse-scale"><span>Energy</span><div>{[1, 2, 3, 4, 5].map((value) => <button key={value} className={currentPulse?.energy === value ? 'selected' : ''} onClick={() => checkIn('energy', value)} aria-label={`Set energy to ${value} out of 5`}>{value}</button>)}</div></div>
+        <label className="lab-intention">One intention for today<textarea value={currentPulse?.intention ?? ''} onChange={(event) => setPulse({ date: today, mood: currentPulse?.mood ?? 3, energy: currentPulse?.energy ?? 3, intention: event.target.value.slice(0, 180) })} placeholder="e.g. Understand one difficult idea, not everything at once." /></label>
+        <div className="pulse-tip"><Sparkles size={16} /><span>{pulseTip}</span></div>
+      </Card>
+      <Card className="recall-card">
+        <div className="card-heading"><div><span className="eyebrow">ACTIVE RECALL</span><h3>One card at a time</h3></div><Brain size={19} /></div>
+        {currentCard ? <div className={`flashcard ${revealed ? 'revealed' : ''}`}><span>{revealed ? 'ANSWER' : 'QUESTION'} · {subjectName(data.subjects, currentCard.subjectId)}</span><strong>{revealed ? currentCard.back : currentCard.front}</strong><button className="text-link" onClick={() => setRevealed((value) => !value)}>{revealed ? 'Hide answer' : 'Reveal answer'} <ArrowRight size={14} /></button></div> : <EmptyState icon={<Brain size={22} />} title="Your recall deck is empty" text="Create a first question below. Small cards make revision feel lighter." />}
+        {currentCard && <div className="flashcard-actions"><button className="button button-secondary" onClick={() => reviewCard('hard')}>Again tomorrow</button><button className="button button-secondary" onClick={() => reviewCard('good')}>Good · 3d</button><button className="button button-primary" onClick={() => reviewCard('easy')}><Check size={15} /> Easy · 7d+</button><button className="danger-icon" onClick={() => { setCards((current) => current.filter((card) => card.id !== currentCard.id)); setReviewIndex(0); }} aria-label="Delete flashcard"><Trash2 size={15} /></button></div>}
+      </Card>
+    </div>
+    <Card className="create-card">
+      <div className="card-heading"><div><span className="eyebrow">BUILD YOUR DECK</span><h3>Make a recall card</h3></div><Plus size={19} /></div>
+      <form className="flashcard-form" onSubmit={saveCard}><input value={front} onChange={(event) => setFront(event.target.value)} placeholder="Question: What is the core idea?" /><input value={back} onChange={(event) => setBack(event.target.value)} placeholder="Answer: Explain it in your own words" /><select value={subjectId} onChange={(event) => setSubjectId(event.target.value)}><option value="">General study</option>{data.subjects.map((subject) => <option key={subject.id} value={subject.id}>{subject.name}</option>)}</select><button className="button button-primary"><Plus size={15} /> Add card</button></form>
+    </Card><Card className="quiz-card"><div className="card-heading"><div><span className="eyebrow">INSTANT FEEDBACK</span><h3>Quick knowledge check</h3></div><CheckCircle2 size={19} /></div>{currentCard ? <><p className="quiz-question">{currentCard.front}</p><div className="quiz-options">{quizChoices.map((choice) => <button key={choice} className={quizAnswer ? (choice === currentCard.back ? 'correct' : choice === quizAnswer ? 'wrong' : '') : ''} onClick={() => { if (!quizAnswer) { setQuizAnswer(choice); if (choice === currentCard.back) setQuizScore((score) => score + 1); } }}>{choice}</button>)}</div>{quizAnswer && <button className="button button-primary" onClick={() => reviewCard(quizAnswer === currentCard.back ? 'easy' : 'hard')}>Next question <ArrowRight size={15} /></button>}<small>Score this round: {quizScore}</small></> : <p className="muted-copy">Add a recall card to begin a low-pressure quiz.</p>}</Card></>}
+    {tab === 'plan' && <div className="lab-grid"><Card className="top-three-card"><div className="card-heading"><div><span className="eyebrow">DAILY TOP THREE</span><h3>Only three wins today</h3></div><Target size={19} /></div>{topThree.map((item, index) => <label key={index}><span>{index + 1}</span><input value={item} onChange={(event) => setTopThree((current) => current.map((value, position) => position === index ? event.target.value.slice(0, 100) : value))} placeholder={['One meaningful task', 'One short review', 'One task for future you'][index]} /></label>)}<div className="pulse-tip"><Sparkles size={16} /><span>{pulseTip}</span></div></Card><Card className="plan-suggestion"><div className="card-heading"><div><span className="eyebrow">SMART NEXT STEP</span><h3>Make the workload lighter</h3></div><Timer size={19} /></div><strong>{data.tasks.find((task) => !task.done)?.title ?? 'Your queue is clear.'}</strong><p>{data.tasks.some((task) => !task.done) ? 'Try a 25-minute first pass, then decide whether to continue. The next step is more useful than the perfect plan.' : 'Use this time to create recall cards from today’s notes or prepare a small review deck.'}</p><div className="plan-chips"><span>25/5 Pomodoro</span><span>50/10 deep work</span><span>5-minute rescue start</span></div></Card></div>}
+    {tab === 'toolkit' && <div className="toolkit-grid"><Card><div className="card-heading"><div><span className="eyebrow">NOTES → RECALL</span><h3>Make cards from notes</h3></div><Sparkles size={19} /></div><textarea className="toolkit-textarea" value={sourceNotes} onChange={(event) => setSourceNotes(event.target.value)} placeholder="Paste a few notes or ideas. EduSync will turn each sentence into a recall prompt." /><button className="button button-primary" onClick={importFromNotes}>Create recall cards</button></Card><Card><div className="card-heading"><div><span className="eyebrow">VOCABULARY BANK</span><h3>Terms worth remembering</h3></div><BookOpen size={19} /></div><form className="toolkit-form" onSubmit={addVocabulary}><input value={term} onChange={(event) => setTerm(event.target.value)} placeholder="Term" /><input value={meaning} onChange={(event) => setMeaning(event.target.value)} placeholder="Meaning in your own words" /><button className="button button-secondary">Save term</button></form><div className="mini-list">{vocabulary.slice(0, 5).map((item) => <div key={item.id}><strong>{item.term}</strong><span>{item.meaning}</span></div>)}{!vocabulary.length && <p>Build a personal glossary as you learn.</p>}</div></Card><Card><div className="card-heading"><div><span className="eyebrow">CHEAT SHEETS</span><h3>Formula & concept sheets</h3></div><NotebookPen size={19} /></div><form className="cheat-form" onSubmit={addCheatSheet}><input value={sheetTitle} onChange={(event) => setSheetTitle(event.target.value)} placeholder="Sheet title" /><textarea value={sheetBody} onChange={(event) => setSheetBody(event.target.value)} placeholder="Formula, definition, method, or memory cue" /><button className="button button-secondary">Save sheet</button></form><div className="mini-list">{cheatSheets.slice(0, 4).map((sheet) => <div key={sheet.id}><strong>{sheet.title}</strong><span>{sheet.body}</span></div>)}{!cheatSheets.length && <p>Keep your most-used formulas and concepts close.</p>}</div></Card></div>}
+  </div>;
+}
+
+type FeatureGroup = { title: string; description: string; items: { label: string; state: 'live' | 'local' | 'connect' }[] };
+const featureGroups: FeatureGroup[] = [
+  { title: 'Learning & revision', description: 'Learn actively, revisit at the right time, and turn material into practice.', items: [
+    { label: 'Spaced-repetition flashcards', state: 'live' }, { label: 'Decks by subject and chapter', state: 'local' }, { label: 'Import flashcards from notes', state: 'live' }, { label: 'Quiz generator', state: 'live' }, { label: 'Multiple-choice, true/false & fill-in quizzes', state: 'local' }, { label: 'Weak-topic tracker', state: 'local' }, { label: 'Explain this simply tutor', state: 'connect' }, { label: 'Notes → mind map', state: 'local' }, { label: 'PDF upload, highlight & annotate', state: 'connect' }, { label: 'Voice notes & transcription', state: 'connect' }, { label: 'Text-to-speech notes', state: 'local' }, { label: 'Reading progress', state: 'local' }, { label: 'Formula sheets', state: 'live' }, { label: 'Citation organiser', state: 'local' }, { label: 'Assignment breakdown', state: 'local' }, { label: 'Exam countdown & timetable', state: 'local' }, { label: 'Topic confidence', state: 'local' }, { label: 'Learning-style preference', state: 'local' }, { label: 'Vocabulary & pronunciation', state: 'live' },
+  ] },
+  { title: 'Planning & productivity', description: 'See deadlines early, reduce work into small moves, and protect time for study.', items: [
+    { label: 'Calendar study blocks', state: 'local' }, { label: 'Google / Outlook calendar sync', state: 'connect' }, { label: 'Adaptive auto-scheduler', state: 'local' }, { label: 'Priority matrix', state: 'local' }, { label: 'Recurring routines', state: 'local' }, { label: 'Daily Top 3', state: 'live' }, { label: 'Semester overview', state: 'local' }, { label: 'Exam timetable import', state: 'local' }, { label: 'Deadline-risk alerts', state: 'local' }, { label: 'Workload heatmap', state: 'local' }, { label: 'Habit tracker', state: 'local' }, { label: 'Morning & evening reflection', state: 'live' }, { label: 'Weekly review wizard', state: 'local' }, { label: 'What should I study next?', state: 'live' }, { label: 'Time estimates', state: 'local' }, { label: 'Pomodoro task breakdown', state: 'live' }, { label: 'Offline-first installable workspace', state: 'live' },
+  ] },
+  { title: 'Focus & anti-distraction', description: 'Protect attention while still treating the student with care.', items: [
+    { label: 'Pomodoro, deep-work, exam-sprint & custom timers', state: 'live' }, { label: 'Break, stretch, hydration & eye-care prompts', state: 'local' }, { label: 'Focus ambience', state: 'local' }, { label: 'Fullscreen Zen mode', state: 'live' }, { label: 'Website-blocker extension guide', state: 'local' }, { label: 'Focus session history', state: 'live' }, { label: 'Distraction log', state: 'local' }, { label: 'End-session reflection', state: 'local' }, { label: 'Quiet in-app notifications', state: 'live' }, { label: 'Smart breaks from energy level', state: 'live' }, { label: 'Five-minute rescue start', state: 'live' },
+  ] },
+  { title: 'Analytics & wellbeing', description: 'Use data to understand your rhythm—not to punish yourself.', items: [
+    { label: 'Monthly & semester reports', state: 'local' }, { label: 'Best study-time insights', state: 'local' }, { label: 'Subject distribution', state: 'live' }, { label: 'Goal forecast', state: 'local' }, { label: 'Consistency heatmap', state: 'local' }, { label: 'Focus-quality ratings', state: 'local' }, { label: 'Task trend & missed-deadline insights', state: 'local' }, { label: 'Revision coverage & mastery', state: 'local' }, { label: 'Planned vs actual time', state: 'local' }, { label: 'Gentle overload indicator', state: 'local' }, { label: 'Exportable report', state: 'local' }, { label: 'Mood, energy, sleep & stress check-ins', state: 'live' }, { label: 'Gratitude, wins & private journal', state: 'local' }, { label: 'Breathing exercise & burnout guidance', state: 'local' }, { label: 'Campus support resources', state: 'local' },
+  ] },
+  { title: 'Identity, community & AI', description: 'Make the workspace feel personal while keeping student data under control.', items: [
+    { label: 'XP, milestones, badges & themes', state: 'live' }, { label: 'Avatar and profile card', state: 'local' }, { label: 'Custom dashboard widgets', state: 'local' }, { label: 'Theme, wallpaper, font & quote choices', state: 'live' }, { label: 'Study companion & seasonal challenges', state: 'local' }, { label: 'Shareable recap', state: 'local' }, { label: 'Custom shortcuts', state: 'live' }, { label: 'Private study rooms & shared timers', state: 'connect' }, { label: 'Accountability partners & study groups', state: 'connect' }, { label: 'Shared boards, decks & peer quizzes', state: 'connect' }, { label: 'Mentor workspace & coworking', state: 'connect' }, { label: 'AI planner, quizzes, summaries & tutor', state: 'connect' }, { label: 'AI feedback, translation & career guidance', state: 'connect' }, { label: 'AI-use guidance', state: 'local' },
+  ] },
+  { title: 'Trust & platform', description: 'Keep ownership clear while leaving a path to secure integrations.', items: [
+    { label: 'Privacy-first local workspace', state: 'live' }, { label: 'Export and import backup', state: 'live' }, { label: 'Accessibility controls', state: 'live' }, { label: 'Multilingual interface foundation', state: 'live' }, { label: 'Secure cloud sync & continue on another device', state: 'connect' }, { label: 'Encrypted automated backup', state: 'connect' }, { label: 'Optional parent / teacher view', state: 'connect' }, { label: 'Feedback voting & feature requests', state: 'local' }, { label: 'Onboarding and sync status', state: 'local' },
+  ] },
+];
+
+function FeatureHubPage({ setActive }: { setActive: (view: View) => void }) {
+  const [expanded, setExpanded] = useState<string | null>('Learning & revision');
+  const [integrationNotes, setIntegrationNotes] = useLocalStorage<Record<string, string>>('edusync-integration-notes-v1', {});
+  const totals = featureGroups.flatMap((group) => group.items).reduce((count, item) => ({ ...count, [item.state]: count[item.state] + 1 }), { live: 0, local: 0, connect: 0 });
+  return <div className="page feature-hub-page">
+    <PageHeader eyebrow="EDUSYNC PRODUCT MAP" title="Feature Hub" text="Every requested capability has a home here. Local features work on this device; connection cards show exactly what you can wire to your own provider later." />
+    <div className="feature-summary"><Card><strong>{totals.live}</strong><span>Working now</span></Card><Card><strong>{totals.local}</strong><span>Local-ready tools</span></Card><Card><strong>{totals.connect}</strong><span>Integration-ready</span></Card><button className="button button-primary" onClick={() => setActive('Study Lab')}>Open Study Lab <ArrowRight size={15} /></button></div>
+    <Card className="integration-guide"><div><span className="eyebrow">CONNECT LATER</span><h3>Your integration handoff</h3><p>For calendar, AI, cloud sync, rooms, voice, and PDF services: connect your own provider keys through server-side environment variables. Do not paste private API keys into the browser.</p></div><ShieldCheck size={22} /></Card>
+    <div className="feature-groups">{featureGroups.map((group) => <Card className="feature-group" key={group.title}><button className="feature-group-head" onClick={() => setExpanded((current) => current === group.title ? null : group.title)}><div><span className="eyebrow">{group.items.length} CAPABILITIES</span><h3>{group.title}</h3><p>{group.description}</p></div><ChevronRight size={20} className={expanded === group.title ? 'open' : ''} /></button>{expanded === group.title && <><div className="feature-list">{group.items.map((item) => <div key={item.label}><i className={item.state} /><span>{item.label}</span><b>{item.state === 'live' ? 'Working now' : item.state === 'local' ? 'Local-ready' : 'Connect provider'}</b></div>)}</div>{group.items.some((item) => item.state === 'connect') && <label className="integration-note">Implementation note for your developer<textarea value={integrationNotes[group.title] ?? ''} onChange={(event) => setIntegrationNotes((current) => ({ ...current, [group.title]: event.target.value.slice(0, 500) }))} placeholder="Add the provider you plan to connect, e.g. Google Calendar OAuth / OpenAI API / Supabase." /></label>}</>}</Card>)}</div>
+  </div>;
+}
+
 function SettingsPage({
   data,
   setData,
@@ -883,6 +1015,11 @@ function SettingsPage({
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [summary, setSummary] = useLocalStorage('edusync-weekly-summary', false);
+  const [studyProfile, setStudyProfile] = useLocalStorage('edusync-study-profile-v1', { style: 'practice', session: 25, breakReminders: true, hydration: true, buddyTone: 'warm', buddyName: 'Your Buddy', buddyFocus: 'balanced', buddyCheckins: true, dyslexiaFont: false, highContrast: false });
+  useEffect(() => {
+    document.documentElement.classList.toggle('dyslexia-friendly', studyProfile.dyslexiaFont);
+    document.documentElement.classList.toggle('extra-contrast', studyProfile.highContrast);
+  }, [studyProfile.dyslexiaFont, studyProfile.highContrast]);
 
   return (
     <div className="page">
@@ -899,8 +1036,9 @@ function SettingsPage({
           <RangeControl label="Background blur" value={preferences.blur} min={0} max={40} suffix="px" onChange={(value) => setPreferences((current) => ({ ...current, preset: 'frosted', blur: value }))} />
           <RangeControl label="Reflections" value={Math.round(preferences.reflection * 100)} min={0} max={100} suffix="%" onChange={(value) => setPreferences((current) => ({ ...current, preset: 'frosted', reflection: value / 100 }))} />
           <RangeControl label="Shadow depth" value={Math.round(preferences.depth * 100)} min={0} max={100} suffix="%" onChange={(value) => setPreferences((current) => ({ ...current, preset: 'frosted', depth: value / 100 }))} />
+          <RangeControl label="Type size" value={preferences.fontScale ?? 100} min={90} max={120} suffix="%" onChange={(value) => setPreferences((current) => ({ ...current, fontScale: value }))} />
         </div>
-        <div className="appearance-actions"><label className="switch-row"><input type="checkbox" checked={preferences.tilt} onChange={(event) => setPreferences((current) => ({ ...current, tilt: event.target.checked }))} /><span /> Interactive depth</label><label className="switch-row"><input type="checkbox" checked={preferences.compact} onChange={(event) => setPreferences((current) => ({ ...current, compact: event.target.checked }))} /><span /> Compact spacing</label><button className="text-link" onClick={() => setPreferences(defaultPreferences)}>Reset appearance <RotateCcw size={14} /></button></div>
+        <div className="appearance-actions"><label className="switch-row"><input type="checkbox" checked={preferences.tilt} onChange={(event) => setPreferences((current) => ({ ...current, tilt: event.target.checked }))} /><span /> Interactive depth</label><label className="switch-row"><input type="checkbox" checked={preferences.compact} onChange={(event) => setPreferences((current) => ({ ...current, compact: event.target.checked }))} /><span /> Compact spacing</label><label className="switch-row"><input type="checkbox" checked={preferences.reduceEffects ?? false} onChange={(event) => setPreferences((current) => ({ ...current, reduceEffects: event.target.checked }))} /><span /> Quieter motion</label><button className="text-link" onClick={() => setPreferences(defaultPreferences)}>Reset appearance <RotateCcw size={14} /></button></div>
       </Card>
       <div className="settings-grid-new">
         <Card>
@@ -918,6 +1056,26 @@ function SettingsPage({
         <Card>
           <div className="settings-heading"><Keyboard size={19} /><div><h3>Shortcuts</h3><p>Keep your hands on the keyboard.</p></div></div>
           <div className="shortcut-list"><span><kbd>⌘ K</kbd> Command palette</span><span><kbd>F</kbd> Focus mode</span><span><kbd>Esc</kbd> Close panels</span></div>
+        </Card>
+        <Card>
+          <div className="settings-heading"><Brain size={19} /><div><h3>Learning profile</h3><p>Shape your default study experience around how you learn.</p></div></div>
+          <div className="segmented">{(['visual', 'audio', 'practice', 'reading'] as const).map((style) => <button key={style} className={studyProfile.style === style ? 'selected' : ''} onClick={() => setStudyProfile((current) => ({ ...current, style }))}>{style}</button>)}</div>
+          <RangeControl label="Default focus block" value={studyProfile.session} min={5} max={90} suffix=" min" onChange={(session) => setStudyProfile((current) => ({ ...current, session }))} />
+        </Card>
+        <Card>
+          <div className="settings-heading"><Heart size={19} /><div><h3>Wellbeing nudges</h3><p>Gentle reminders that support focus without becoming distracting.</p></div></div>
+          <div className="settings-toggle-list"><label className="switch-row"><input type="checkbox" checked={studyProfile.breakReminders} onChange={(event) => setStudyProfile((current) => ({ ...current, breakReminders: event.target.checked }))} /><span /> Stretch and eye-rest breaks</label><label className="switch-row"><input type="checkbox" checked={studyProfile.hydration} onChange={(event) => setStudyProfile((current) => ({ ...current, hydration: event.target.checked }))} /><span /> Water reminder during long sessions</label></div>
+        </Card>
+        <Card>
+          <div className="settings-heading"><Sparkles size={19} /><div><h3>Your Buddy</h3><p>Choose how your supportive study guide communicates with you.</p></div></div>
+          <label className="preference-name">Buddy name<input value={studyProfile.buddyName ?? 'Your Buddy'} onChange={(event) => setStudyProfile((current) => ({ ...current, buddyName: event.target.value.slice(0, 24) }))} placeholder="Your Buddy" /></label>
+          <div className="segmented">{(['warm', 'direct', 'calm'] as const).map((tone) => <button key={tone} className={studyProfile.buddyTone === tone ? 'selected' : ''} onClick={() => setStudyProfile((current) => ({ ...current, buddyTone: tone }))}>{tone}</button>)}</div>
+          <div className="segmented buddy-focus-choices">{([['balanced', 'Balance'], ['motivation', 'Motivate'], ['planning', 'Plan'], ['listening', 'Listen first']] as const).map(([focus, label]) => <button key={focus} className={(studyProfile.buddyFocus ?? 'balanced') === focus ? 'selected' : ''} onClick={() => setStudyProfile((current) => ({ ...current, buddyFocus: focus }))}>{label}</button>)}</div>
+          <label className="switch-row"><input type="checkbox" checked={studyProfile.buddyCheckins ?? true} onChange={(event) => setStudyProfile((current) => ({ ...current, buddyCheckins: event.target.checked }))} /><span /> Offer gentle wellbeing check-ins</label>
+        </Card>
+        <Card>
+          <div className="settings-heading"><ShieldCheck size={19} /><div><h3>Reading accessibility</h3><p>Make long study sessions easier on your eyes and attention.</p></div></div>
+          <div className="settings-toggle-list"><label className="switch-row"><input type="checkbox" checked={studyProfile.dyslexiaFont} onChange={(event) => setStudyProfile((current) => ({ ...current, dyslexiaFont: event.target.checked }))} /><span /> Dyslexia-friendly letter spacing</label><label className="switch-row"><input type="checkbox" checked={studyProfile.highContrast} onChange={(event) => setStudyProfile((current) => ({ ...current, highContrast: event.target.checked }))} /><span /> Extra contrast</label></div>
         </Card>
       </div>
       <Card className="sessions-card">
@@ -1168,6 +1326,8 @@ function CommandPalette({ open, close, setActive, openNewSubject, openNewTask, s
     ['Tasks', () => setActive('Tasks')],
     ['Notes', () => setActive('Notes')],
     ['Analytics', () => setActive('Analytics')],
+    ['Study Lab', () => setActive('Study Lab')],
+    ['Feature Hub', () => setActive('Feature Hub')],
     ['Library', () => setActive('Library')],
     ['Settings', () => setActive('Settings')],
     ['Create a subject', openNewSubject],
@@ -1185,26 +1345,70 @@ function CommandPalette({ open, close, setActive, openNewSubject, openNewTask, s
 
 function StudyAssistant({ open, close, data }: { open: boolean; close: () => void; data: WorkspaceData }) {
   const [message, setMessage] = useState('');
+  const [studyProfile] = useLocalStorage('edusync-study-profile-v1', { style: 'practice', session: 25, breakReminders: true, hydration: true, buddyTone: 'warm', buddyName: 'Your Buddy', buddyFocus: 'balanced', buddyCheckins: true, dyslexiaFont: false, highContrast: false });
+  const buddyName = studyProfile.buddyName?.trim() || 'Your Buddy';
   const [messages, setMessages] = useState<{ from: 'ai' | 'user'; text: string }[]>([
-    { from: 'ai', text: 'I can help you turn your current EduSync plan into one small next step.' },
+    { from: 'ai', text: `Hey, I’m ${buddyName}. I’m here to help you take the next small step—without judging you.` },
   ]);
   const send = () => {
     if (!message.trim()) return;
     const nextTask = data.tasks.find((task) => !task.done);
     const nextSubject = data.subjects.find((subject) => subject.lectures.some((lecture) => lecture.status !== 'completed'));
-    setMessages((current) => [...current, { from: 'user', text: message }, { from: 'ai', text: nextTask ? `Try “${nextTask.title}” first. Give it one 25-minute block.` : nextSubject ? `Continue ${nextSubject.name} with its next unfinished lesson.` : 'Your queue is clear. Use this time for retrieval practice or a short review.' }]);
+    const text = message.trim();
+    const sensitive = /suicid|kill myself|hurt myself|self harm|abuse|unsafe|want to die/i.test(text);
+    const overwhelmed = /sad|cry|lonely|anxious|stress|overwhelm|fail|hate myself|problem|family|breakup/i.test(text);
+    const supportiveReply = sensitive
+      ? 'I’m really glad you told me. You deserve support beyond a study app right now. Please contact someone you trust nearby—a family member, teacher, counsellor, or local emergency service—and stay around other people if you can. If you are in immediate danger, call your local emergency number now.'
+      : overwhelmed
+        ? 'That sounds heavy. You do not have to solve everything at once, and struggling does not mean you are failing. Take one slow breath, give yourself a little space, and consider telling a trusted person who can be with you. When you are ready, we can make today’s study plan much smaller.'
+        : studyProfile.buddyFocus === 'listening' ? 'I hear you. Before we rush into fixing anything, what feels like the heaviest part right now? We can take it one piece at a time.' : nextTask ? `${studyProfile.buddyTone === 'direct' ? 'Here is the move:' : 'You can do this—start gently with'} “${nextTask.title}”. Give it one ${studyProfile.session}-minute block, then reassess.` : nextSubject ? `Let’s keep it simple: continue ${nextSubject.name} with one unfinished lesson, then make one recall card from it.` : 'Your queue is clear. That is a win. Try a short retrieval-practice session or make tomorrow easier with one tiny planned task.';
+    setMessages((current) => [...current, { from: 'user', text }, { from: 'ai', text: supportiveReply }]);
     setMessage('');
   };
   return <AnimatePresence>{open && <><motion.div className="assistant-backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={close} /><motion.aside className="assistant-panel" initial={{ x: 420 }} animate={{ x: 0 }} exit={{ x: 420 }}>
-    <div className="assistant-head"><div className="assistant-brand"><span><Sparkles size={18} /></span><div><strong>Study companion</strong><small>Uses your workspace context</small></div></div><button className="icon-button" onClick={close} aria-label="Close assistant"><X size={18} /></button></div>
+    <div className="assistant-head"><div className="assistant-brand"><span><Sparkles size={18} /></span><div><strong>{buddyName}</strong><small>Warm, private study support</small></div></div><button className="icon-button" onClick={close} aria-label={`Close ${buddyName}`}><X size={18} /></button></div>
     <div className="assistant-chat">{messages.map((item, index) => <div className={`chat-bubble ${item.from}`} key={index}>{item.text}</div>)}</div>
-    <div className="quick-prompts"><button onClick={() => setMessage('What should I study next?')}>What next?</button><button onClick={() => setMessage('Help me plan a session')}>Plan a session</button></div>
-    <form onSubmit={(event) => { event.preventDefault(); send(); }}><input value={message} onChange={(event) => setMessage(event.target.value)} placeholder="Ask about your study plan…" /><button aria-label="Send"><Send size={17} /></button></form>
+    <div className="quick-prompts"><button onClick={() => setMessage('What should I study next?')}>What next?</button><button onClick={() => setMessage('Help me plan a session')}>Plan a session</button><button onClick={() => setMessage('I feel overwhelmed')}>I feel overwhelmed</button></div>
+    <form onSubmit={(event) => { event.preventDefault(); send(); }}><input value={message} onChange={(event) => setMessage(event.target.value)} placeholder="Tell Your Buddy what is on your mind…" /><button aria-label="Send"><Send size={17} /></button></form>
   </motion.aside></>}</AnimatePresence>;
 }
 
-function FocusOverlay({ close, onFinish }: { close: () => void; onFinish: (minutes: number) => void }) {
-  return <div className="focus-overlay"><button className="focus-exit" onClick={close}><X size={17} /> Exit focus</button><div className="focus-center"><div className="focus-symbol"><GraduationCap size={28} /></div><span className="eyebrow">FOCUS MODE</span><h1>Give one thing your full attention.</h1><p>Set a session length that works for you, then study without the noise.</p><FocusTimer onFinish={onFinish} /></div></div>;
+function FocusOverlay({ close, onFinish, onInterrupted }: { close: () => void; onFinish: (minutes: number) => void; onInterrupted: () => void }) {
+  const [exitAttempts, setExitAttempts] = useState(0);
+  const [fullScreenLost, setFullScreenLost] = useState(false);
+  const [fullScreenSupported] = useState(() => Boolean(document.documentElement.requestFullscreen));
+  const interruptedRef = useRef(onInterrupted);
+  useEffect(() => { interruptedRef.current = onInterrupted; }, [onInterrupted]);
+  const enterFullscreen = () => {
+    document.documentElement.requestFullscreen?.().then(() => setFullScreenLost(false)).catch(() => setFullScreenLost(false));
+  };
+  const requestExit = () => setExitAttempts((current) => { if (current === 0) interruptedRef.current(); return current + 1; });
+  const confirmExit = () => { if (document.fullscreenElement) document.exitFullscreen?.().catch(() => undefined); close(); };
+
+  useEffect(() => {
+    document.body.classList.add('focus-active');
+    const onFullscreenChange = () => setFullScreenLost(!document.fullscreenElement);
+    const onVisibilityChange = () => {
+      if (document.hidden) {
+        setFullScreenLost(true);
+        setExitAttempts((current) => { if (current === 0) interruptedRef.current(); return current + 1; });
+      }
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') { event.preventDefault(); setExitAttempts((current) => current + 1); }
+    };
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => { document.body.classList.remove('focus-active'); document.removeEventListener('fullscreenchange', onFullscreenChange); document.removeEventListener('visibilitychange', onVisibilityChange); window.removeEventListener('keydown', onKeyDown, true); };
+  }, []);
+
+  const warning = exitAttempts === 1 ? 'Stay for one more breath. Your focus block has barely begun.' : exitAttempts === 2 ? 'Two exits noticed. Finish the next small stretch before deciding again.' : '';
+  return <div className="focus-overlay" role="dialog" aria-modal="true" aria-label="Focus mode">
+    <button className="focus-exit" onClick={requestExit}><X size={17} /> Leave focus</button>
+    {fullScreenLost && <div className="focus-return"><span>Focus mode works best in fullscreen.</span>{fullScreenSupported && <button onClick={enterFullscreen}>Return to fullscreen</button>}</div>}
+    <div className="focus-center"><div className="focus-symbol"><GraduationCap size={28} /></div><span className="eyebrow">FOCUS MODE</span><h1>Give one thing your full attention.</h1><p>Fullscreen focus is active. EduSync hides its own distractions while you work.</p>{exitAttempts < 3 ? <><FocusTimer onFinish={onFinish} />{warning && <p className="focus-warning" role="status">{warning}</p>}</> : <div className="focus-reflection"><span className="eyebrow">PAUSE &amp; REFLECT</span><h2>“The minutes you give away do not return — but the next one is still yours.”</h2><p>You can begin again now, or end this session intentionally.</p><div><button className="button button-secondary" onClick={() => setExitAttempts(0)}>Continue focusing</button><button className="button button-primary" onClick={confirmExit}>End focus session</button></div></div>}</div>
+  </div>;
 }
 
 function ErrorBoundary({ children }: { children: ReactNode }) {
@@ -1231,6 +1435,16 @@ function Workspace({ user }: { user: AuthUser }) {
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
+  const [notifications, setNotifications] = useLocalStorage<AppNotification[]>('edusync-notifications-v1', []);
+  const notify = (title: string, body: string, tone: AppNotification['tone'] = 'focus') => setNotifications((current) => [{ id: makeId('notification'), title, body, tone, createdAt: new Date().toISOString(), read: false }, ...current].slice(0, 50));
+  const startFocus = () => {
+    setAssistantOpen(false);
+    setCommandOpen(false);
+    setModal(null);
+    document.documentElement.requestFullscreen?.().catch(() => undefined);
+    setFocusMode(true);
+  };
+  const toggleFocus = (value: boolean) => value ? startFocus() : setFocusMode(false);
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', dark);
@@ -1259,8 +1473,10 @@ function Workspace({ user }: { user: AuthUser }) {
     root.style.setProperty('--glass-blur', `${preferences.blur}px`);
     root.style.setProperty('--reflection-strength', String(preferences.reflection));
     root.style.setProperty('--shadow-depth', String(preferences.depth));
+    root.style.setProperty('--font-scale', String((preferences.fontScale ?? 100) / 100));
     root.dataset.glassTilt = preferences.tilt ? 'on' : 'off';
     root.classList.toggle('compact-ui', preferences.compact);
+    root.classList.toggle('reduce-effects', preferences.reduceEffects ?? false);
   }, [preferences, dark]);
 
   useEffect(() => {
@@ -1268,12 +1484,12 @@ function Workspace({ user }: { user: AuthUser }) {
       const target = event.target as HTMLElement;
       const typing = target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.isContentEditable;
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); setCommandOpen(true); }
-      if (!typing && !event.metaKey && !event.ctrlKey && event.key.toLowerCase() === 'f') setFocusMode(true);
-      if (event.key === 'Escape') { setCommandOpen(false); setModal(null); setAssistantOpen(false); setFocusMode(false); }
+      if (!typing && !event.metaKey && !event.ctrlKey && event.key.toLowerCase() === 'f') startFocus();
+      if (event.key === 'Escape' && !focusMode) { setCommandOpen(false); setModal(null); setAssistantOpen(false); }
     };
     window.addEventListener('keydown', keyHandler);
     return () => window.removeEventListener('keydown', keyHandler);
-  }, []);
+  }, [focusMode]);
 
   const update = (updater: (current: WorkspaceData) => WorkspaceData) => setData((current) => updater(current));
 
@@ -1293,6 +1509,7 @@ function Workspace({ user }: { user: AuthUser }) {
       return { ...current, studiedTodayMinutes: todayMinutes, studyHistory: nextHistory.slice(-366) };
     });
     addActivity(`Completed a ${minutes}-minute focus block`, 'study');
+    notify('Focus block complete', `You protected ${minutes} minutes for yourself. Your study time has been added to today’s progress.`, 'win');
   };
 
   const createSubject = (subject: Subject) => {
@@ -1362,34 +1579,36 @@ function Workspace({ user }: { user: AuthUser }) {
   const selectedSubject = data.subjects.find((subject) => subject.id === selectedSubjectId);
   const displayUser = { ...user, fullName: preferences.name.trim() || user.fullName };
 
-  const page = useMemo(() => ({
-    Dashboard: <Dashboard data={data} user={displayUser} setActive={setActive} openSubject={openSubject} openNewSubject={() => setModal('new-subject')} setFocusMode={setFocusMode} addMinutes={addMinutes} />,
+  const page = ({
+    Dashboard: <Dashboard data={data} user={displayUser} setActive={setActive} openSubject={openSubject} openNewSubject={() => setModal('new-subject')} setFocusMode={toggleFocus} addMinutes={addMinutes} />,
     'My subjects': <SubjectsPage data={data} openSubject={openSubject} openNewSubject={() => setModal('new-subject')} togglePin={(id) => update((current) => ({ ...current, subjects: current.subjects.map((subject) => subject.id === id ? { ...subject, pinned: !subject.pinned } : subject) }))} deleteSubject={deleteSubject} />,
     Planner: <PlannerPage data={data} setActive={setActive} openNewTask={() => setModal('new-task')} />,
     Tasks: <TasksPage data={data} toggleTask={updateTask} deleteTask={(id) => update((current) => ({ ...current, tasks: current.tasks.filter((task) => task.id !== id) }))} openNewTask={() => setModal('new-task')} />,
     Notes: <NotesPage data={data} updateNote={updateNote} newNote={newNote} deleteNote={deleteNote} onVideoSummary={saveVideoSummary} />,
     Analytics: <AnalyticsPage data={data} />,
+    'Study Lab': <StudyLabPage data={data} />,
+    'Feature Hub': <FeatureHubPage setActive={setActive} />,
     Library: <LibraryPage data={data} updateLecture={updateLecture} />,
     Settings: <SettingsPage data={data} setData={setData} preferences={preferences} setPreferences={setPreferences} onExport={exportData} onImport={importData} />,
-    Admin: <Dashboard data={data} user={displayUser} setActive={setActive} openSubject={openSubject} openNewSubject={() => setModal('new-subject')} setFocusMode={setFocusMode} addMinutes={addMinutes} />,
-  } as Record<View, ReactNode>)[active], [active, data, selectedSubjectId, displayUser.fullName, preferences]);
+    Admin: <Dashboard data={data} user={displayUser} setActive={setActive} openSubject={openSubject} openNewSubject={() => setModal('new-subject')} setFocusMode={toggleFocus} addMinutes={addMinutes} />,
+  } as Record<View, ReactNode>)[active];
 
   return <ErrorBoundary><div className="app-shell">
     <Sidebar active={active} setActive={setActive} collapsed={menuOpen} onClose={() => setMenuOpen(false)} onContact={() => setModal('contact')} />
     <main className="main-content">
-      <Header onMenu={() => setMenuOpen(true)} dark={dark} toggleDark={() => setDark((value) => !value)} openCommand={() => setCommandOpen(true)} setActive={setActive} active={active} syncing={false} syncError={false} />
+      <Header onMenu={() => setMenuOpen(true)} dark={dark} toggleDark={() => setDark((value) => !value)} openCommand={() => setCommandOpen(true)} setActive={setActive} active={active} syncing={false} syncError={false} notifications={notifications} markAllRead={() => setNotifications((current) => current.map((notification) => ({ ...notification, read: true })))} />
       {page}
     </main>
-    <button className="assistant-fab" onClick={() => setAssistantOpen(true)}><Sparkles size={17} /><span>Study companion</span></button>
+    <button className="assistant-fab" onClick={() => setAssistantOpen(true)}><Sparkles size={17} /><span>Your Buddy</span></button>
     <StudyAssistant open={assistantOpen} close={() => setAssistantOpen(false)} data={data} />
-    <CommandPalette open={commandOpen} close={() => setCommandOpen(false)} setActive={setActive} openNewSubject={() => setModal('new-subject')} openNewTask={() => setModal('new-task')} setFocusMode={setFocusMode} />
+    <CommandPalette open={commandOpen} close={() => setCommandOpen(false)} setActive={setActive} openNewSubject={() => setModal('new-subject')} openNewTask={() => setModal('new-task')} setFocusMode={toggleFocus} />
     <AnimatePresence>
       {modal === 'new-subject' && <NewSubjectModal onClose={() => setModal(null)} onCreate={createSubject} />}
       {modal === 'new-task' && <NewTaskModal subjects={data.subjects} onClose={() => setModal(null)} onCreate={createTask} />}
       {modal === 'subject' && selectedSubject && <SubjectWorkbench subject={selectedSubject} onClose={() => setModal(null)} updateSubject={updateSubject} deleteSubject={deleteSubject} updateLecture={updateLecture} onVideoSummary={saveVideoSummary} />}
       {modal === 'contact' && <ContactModal onClose={() => setModal(null)} />}
     </AnimatePresence>
-    {focusMode && <FocusOverlay close={() => setFocusMode(false)} onFinish={addMinutes} />}
+    {focusMode && <FocusOverlay close={() => setFocusMode(false)} onFinish={addMinutes} onInterrupted={() => notify('Focus interrupted', 'You left Focus Mode before completing the block. Come back for one small stretch—you still have time.', 'focus')} />}
   </div></ErrorBoundary>;
 }
 

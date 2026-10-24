@@ -5,6 +5,8 @@ export type View =
   | 'Tasks'
   | 'Notes'
   | 'Analytics'
+  | 'Study Lab'
+  | 'Feature Hub'
   | 'Library'
   | 'Settings'
   | 'Admin';
