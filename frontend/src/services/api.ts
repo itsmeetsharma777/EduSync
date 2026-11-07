@@ -23,3 +23,11 @@ export async function submitFeedback(message: string) {
   if (!apiBase) throw new Error('Feedback requires the backend API to be configured.');
   await request('/feedback', { method: 'POST', body: JSON.stringify({ message }) });
 }
+
+export async function explainConcept(topic: string, courseContext?: string) {
+  if (!apiBase) throw new Error('AI tutoring requires the backend API to be configured.');
+  return request<{ explanation: string }>('/ai/concept/explain', {
+    method: 'POST',
+    body: JSON.stringify({ topic, courseContext }),
+  });
+}
