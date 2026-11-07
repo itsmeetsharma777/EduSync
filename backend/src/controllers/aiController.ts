@@ -36,3 +36,30 @@ ${input.transcript}`;
   const response = await client.responses.create({ model: env.openAiModel, input: prompt });
   return res.json({ summary: response.output_text });
 };
+
+
+const explainSchema = z.object({
+  topic: z.string().trim().min(3).max(8000),
+  courseContext: z.string().trim().max(400).optional(),
+});
+
+export const explainConcept: RequestHandler = async (req, res) => {
+  const input = explainSchema.parse(req.body);
+  const prompt = `You are EduSync's patient study tutor. Explain the given concept in simple, accurate language for a university student. Include: (1) plain-language explanation, (2) a relatable analogy, (3) a small worked example where appropriate, (4) three key takeaways, and (5) two active-recall questions. Stay grounded in the provided topic and say when information is uncertain.
+
+Course context: ${input.courseContext ?? 'Not provided'}
+Topic:
+${input.topic}`;
+  if (env.aiProvider === 'openai' && !env.openAiApiKey)
+    return res.status(503).json({ message: 'AI_PROVIDER is openai but OPENAI_API_KEY is missing on the server.' });
+  if (env.aiProvider === 'gemini' && !env.geminiApiKey)
+    return res.status(503).json({ message: 'AI_PROVIDER is gemini but GEMINI_API_KEY is missing on the server.' });
+  if (env.aiProvider === 'gemini') {
+    const client = new GoogleGenAI({ apiKey: env.geminiApiKey });
+    const response = await client.models.generateContent({ model: env.geminiModel, contents: prompt });
+    return res.json({ explanation: response.text ?? '' });
+  }
+  const client = new OpenAI({ apiKey: env.openAiApiKey });
+  const response = await client.responses.create({ model: env.openAiModel, input: prompt });
+  return res.json({ explanation: response.output_text });
+};
