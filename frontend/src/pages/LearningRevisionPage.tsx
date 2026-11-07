@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Brain, BookOpen, FileText, Mic, Network, Volume2, CalendarDays, Target, Sparkles, Plus, Trash2, Upload, Headphones, GraduationCap } from 'lucide-react';
 import { useLocalStorage, makeId } from '../utils/storage';
 import type { WorkspaceData } from '../types';
+import { explainConcept } from '../services/api';
 
 type Card = {id:string;front:string;back:string;subject:string;chapter:string;due:string;interval:number};
 type Exam = {id:string;subject:string;title:string;date:string;start:string;end:string};
@@ -46,7 +47,7 @@ export function LearningRevisionPage({data}:{data:WorkspaceData}){
  const addCard=(e:React.FormEvent)=>{e.preventDefault();if(!card.front.trim()||!card.back.trim())return;setCards(v=>[{id:makeId('rev'),...card,due:today(),interval:0},...v]);setCard(v=>({...v,front:'',back:''}))};
  const importNotes=()=>{const parts=notesInput.split(/[.!?\\n]+/).map(s=>s.trim()).filter(s=>s.length>12).slice(0,40);setCards(v=>[...parts.map(s=>({id:makeId('rev'),front:'Explain: '+s.slice(0,90),back:s,subject:card.subject,chapter:card.chapter,due:today(),interval:0})),...v]);setNotesInput('')};
  const rate=(rating:number)=>{const c=due[0];if(!c)return;const days=rating===1?1:rating===2?3:rating===3?7:14;const d=new Date();d.setDate(d.getDate()+days);setCards(v=>v.map(x=>x.id===c.id?{...x,due:d.toISOString().slice(0,10),interval:days}:x));setWeak(v=>({...v,[c.subject]:Math.max(0,(v[c.subject]??0)+(rating===1?1:-0.25))}))};
- const simplify=()=>{if(!tutor.trim())return;setExplanation('In simple words:\\n'+tutor.split(/(?<=[.!?])\\s+/).map((s,i)=>'• Idea '+(i+1)+': '+s.replace(/\\b(utilize|demonstrate|facilitate|consequently|therefore)\\b/gi,m=>({utilize:'use',demonstrate:'show',facilitate:'help',consequently:'so',therefore:'so'}[m.toLowerCase()]||m))).join('\\n')+'\\n\\nTry teaching this back in your own words.')};
+ const simplify=async()=>{if(!tutor.trim())return;setExplanation('Tutor is thinking…');try{const result=await explainConcept(tutor,card.subject);setExplanation(result.explanation||'The tutor returned an empty explanation.')}catch(error){setExplanation(error instanceof Error?error.message:'Could not reach the AI tutor. Check backend configuration and your AI provider key.')}};
  const transcribe=()=>{const w=window as any;const C=w.SpeechRecognition||w.webkitSpeechRecognition;if(!C){setVoiceStatus('Browser speech recognition unavailable. Use device dictation.');return}const r=new C();r.continuous=true;r.interimResults=true;r.onresult=(e:any)=>{let t='';for(let i=e.resultIndex;i<e.results.length;i++)t+=e.results[i][0].transcript;setVoice(v=>v+t)};r.onerror=(e:any)=>setVoiceStatus('Mic: '+e.error);r.onend=()=>setVoiceStatus('Transcription stopped.');setVoiceStatus('Listening…');r.start()};
  const speak=(t:string)=>{if(!window.speechSynthesis){setVoiceStatus('Speech synthesis unsupported');return}window.speechSynthesis.cancel();window.speechSynthesis.speak(new SpeechSynthesisUtterance(t))};
  const addExam=(e:React.FormEvent)=>{e.preventDefault();if(exam.title&&exam.date){setExams(v=>[{id:makeId('exam'),...exam},...v]);setExam(v=>({...v,title:'',date:'',start:'',end:''}))}};
